@@ -9,6 +9,7 @@ import org.cryptomator.presentation.model.CryptoCloudModel
 import org.cryptomator.presentation.model.DropboxCloudModel
 import org.cryptomator.presentation.model.GoogleDriveCloudModel
 import org.cryptomator.presentation.model.LocalStorageModel
+import org.cryptomator.presentation.model.MegaCloudModel
 import org.cryptomator.presentation.model.OnedriveCloudModel
 import org.cryptomator.presentation.model.PCloudModel
 import org.cryptomator.presentation.model.S3CloudModel
@@ -33,6 +34,7 @@ class CloudModelMapper @Inject constructor() : ModelMapper<CloudModel, Cloud>() 
 			CloudType.PCLOUD -> PCloudModel(domainObject)
 			CloudType.BOX -> BoxCloudModel(domainObject)
 			CloudType.S3 -> S3CloudModel(domainObject)
+			CloudType.MEGA -> MegaCloudModel(domainObject)
 			CloudType.CRYPTO -> CryptoCloudModel(domainObject)
 			CloudType.WEBDAV -> WebDavCloudModel(domainObject)
 			null -> throw IllegalStateException("The type of the object shouldn't be null")

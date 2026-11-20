@@ -523,7 +523,7 @@ class VaultListPresenter @Inject constructor( //
 	}
 
 	private fun onVaultWithoutCloudClickedAndLocked(vault: VaultModel) {
-		if (isWebdavOrLocal(vault.cloudType)) {
+		if (vault.cloudType.isMultiInstance) {
 			requestActivityResult( //
 				ActivityResultCallbacks.cloudConnectionForVaultSelected(vault),  //
 				Intents.cloudConnectionListIntent() //
@@ -541,7 +541,7 @@ class VaultListPresenter @Inject constructor( //
 
 	@Callback
 	fun cloudConnectionForVaultSelected(result: ActivityResult, vaultModel: VaultModel) {
-		val cloud = result.intent().getSerializableExtra(CloudConnectionListPresenter.SELECTED_CLOUD) as Cloud
+		val cloud = result.intent()?.getSerializableExtra(CloudConnectionListPresenter.SELECTED_CLOUD) as? Cloud ?: return
 		val vault = Vault.aCopyOf(vaultModel.toVault()) //
 			.withCloud(cloud) //
 			.build()
@@ -586,7 +586,7 @@ class VaultListPresenter @Inject constructor( //
 
 	@Callback
 	fun vaultUnlockedVaultList(result: ActivityResult) {
-		val cloud = result.intent().getSerializableExtra(SINGLE_RESULT) as Cloud
+		val cloud = result.intent()?.getSerializableExtra(SINGLE_RESULT) as? Cloud ?: return
 		getRootFolderOf(cloud)
 	}
 

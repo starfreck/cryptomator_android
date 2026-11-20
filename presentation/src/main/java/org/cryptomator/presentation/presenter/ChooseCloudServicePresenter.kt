@@ -48,6 +48,10 @@ class ChooseCloudServicePresenter @Inject constructor( //
 			cloudTypeModels.remove(CloudTypeModel.BOX)
 		}
 
+		if (cloudTypeModels.remove(CloudTypeModel.MEGA)) {
+			cloudTypeModels.add(CloudTypeModel.MEGA)
+		}
+
 		view?.render(cloudTypeModels)
 	}
 
@@ -75,8 +79,10 @@ class ChooseCloudServicePresenter @Inject constructor( //
 
 	@Callback
 	fun cloudConnectionListFinished(result: ActivityResult) {
-		val cloud = result.intent().getSerializableExtra(CloudConnectionListPresenter.SELECTED_CLOUD) as Cloud
-		onCloudSelected(cloud)
+		val cloud = result.intent()?.getSerializableExtra(CloudConnectionListPresenter.SELECTED_CLOUD) as? Cloud
+		if (cloud != null) {
+			onCloudSelected(cloud)
+		}
 	}
 
 	private fun handleSingleInstanceClouds(cloudTypeModel: CloudTypeModel) {

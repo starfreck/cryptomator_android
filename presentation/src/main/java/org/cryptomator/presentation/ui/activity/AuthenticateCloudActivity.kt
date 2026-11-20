@@ -8,13 +8,15 @@ import org.cryptomator.presentation.intent.AuthenticateCloudIntent
 import org.cryptomator.presentation.presenter.AuthenticateCloudPresenter
 import org.cryptomator.presentation.ui.activity.view.AuthenticateCloudView
 import org.cryptomator.presentation.ui.dialog.AssignSslCertificateDialog
+import org.cryptomator.presentation.ui.dialog.EnterMegaCredentialsDialog
 import java.security.cert.X509Certificate
 import javax.inject.Inject
 
 @Activity
 class AuthenticateCloudActivity : BaseActivity<ActivityEmptyBinding>(ActivityEmptyBinding::inflate),
 	AuthenticateCloudView,
-	AssignSslCertificateDialog.Callback {
+	AssignSslCertificateDialog.Callback,
+	EnterMegaCredentialsDialog.Callback {
 
 	@Inject
 	lateinit var presenter: AuthenticateCloudPresenter
@@ -43,5 +45,9 @@ class AuthenticateCloudActivity : BaseActivity<ActivityEmptyBinding>(ActivityEmp
 
 	override fun onAcceptCertificateDenied() {
 		presenter.onAcceptWebDavCertificateDenied()
+	}
+
+	override fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
+		presenter.onMegaCredentialsEntered(email, password, twoFactorCode)
 	}
 }

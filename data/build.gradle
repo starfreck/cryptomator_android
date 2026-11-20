@@ -197,6 +197,8 @@ dependencies {
 	addToFlavors(googleFlavors + ['accrescent'], dependencies.trackingFreeGoogleAndroidCLient)
 
 	// rest
+	implementation 'dev.carlsen.mega:mega:1.0.0-beta08'
+	implementation 'org.jetbrains.kotlinx:kotlinx-io-core:0.8.0'
 	implementation dependencies.rxJava
 	implementation dependencies.rxAndroid
 	implementation dependencies.okHttp

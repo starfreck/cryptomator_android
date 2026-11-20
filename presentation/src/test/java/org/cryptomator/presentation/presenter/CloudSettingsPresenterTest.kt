@@ -65,6 +65,12 @@ class CloudSettingsPresenterTest {
 		assertThat(rendered.count { it == CloudTypeModel.S3 }, `is`(1))
 	}
 
+	@Test
+	fun testMegaIsAtTheEndOfCloudServicesList() {
+		val rendered = renderedCloudTypesFor()
+		assertThat(rendered.last(), `is`(CloudTypeModel.MEGA))
+	}
+
 	private fun renderedCloudTypesFor(vararg clouds: Cloud): List<CloudTypeModel> {
 		inTest.loadClouds()
 

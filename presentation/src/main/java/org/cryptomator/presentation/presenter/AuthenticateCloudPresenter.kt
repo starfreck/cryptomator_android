@@ -12,6 +12,7 @@ import org.cryptomator.domain.Cloud
 import org.cryptomator.domain.CloudType
 import org.cryptomator.domain.DropboxCloud
 import org.cryptomator.domain.GoogleDriveCloud
+import org.cryptomator.domain.MegaCloud
 import org.cryptomator.domain.MicrosoftGraphCloud
 import org.cryptomator.domain.OnedriveCloud
 import org.cryptomator.domain.PCloud
@@ -45,6 +46,7 @@ import org.cryptomator.presentation.model.S3CloudModel
 import org.cryptomator.presentation.model.WebDavCloudModel
 import org.cryptomator.presentation.model.mappers.CloudModelMapper
 import org.cryptomator.presentation.ui.activity.view.AuthenticateCloudView
+import org.cryptomator.presentation.ui.dialog.EnterMegaCredentialsDialog
 import org.cryptomator.presentation.workflow.ActivityResult
 import org.cryptomator.presentation.workflow.AddExistingVaultWorkflow
 import org.cryptomator.presentation.workflow.CreateNewVaultWorkflow
@@ -83,6 +85,7 @@ class AuthenticateCloudPresenter @Inject constructor( //
 		BoxAuthStrategy(), //
 		WebDAVAuthStrategy(),  //
 		S3AuthStrategy(), //
+		MegaAuthStrategy(), //
 		LocalStorageAuthStrategy() //
 	)
 
@@ -154,6 +157,7 @@ class AuthenticateCloudPresenter @Inject constructor( //
 			CloudType.DROPBOX -> DropboxCloud.aCopyOf(cloud as DropboxCloud).withUsername(username).build()
 			CloudType.ONEDRIVE -> OnedriveCloud.aCopyOf(cloud as OnedriveCloud).withUsername(username).build()
 			CloudType.SHAREPOINT -> SharepointCloud.aCopyOf(cloud as SharepointCloud).withUsername(username).build()
+			CloudType.MEGA -> MegaCloud.aCopyOf(cloud as MegaCloud).withUsername(username).build()
 			else -> throw IllegalStateException("Cloud " + cloud.type() + " is not supported")
 		}
 	}
@@ -536,6 +540,65 @@ class AuthenticateCloudPresenter @Inject constructor( //
 		private fun startAuthentication(cloud: CloudModel) {
 			authenticationStarted = true
 			startIntent(Intents.s3AddOrChangeIntent().withS3Cloud(cloud as S3CloudModel))
+		}
+	}
+
+	private inner class MegaAuthStrategy : AuthStrategy {
+
+		private var authenticationStarted = false
+
+		override fun supports(cloud: CloudModel): Boolean {
+			return cloud.cloudType() == CloudTypeModel.MEGA
+		}
+
+		override fun resumed(intent: AuthenticateCloudIntent) {
+			if (!authenticationStarted) {
+				authenticationStarted = true
+				view?.showDialog(EnterMegaCredentialsDialog.newInstance())
+			}
+		}
+	}
+
+	fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
+		showProgress(ProgressModel(ProgressStateModel.AUTHENTICATION))
+		kotlin.concurrent.thread {
+			try {
+				val mega = dev.carlsen.mega.Mega(retries = 1)
+				kotlinx.coroutines.runBlocking {
+					mega.login(email, password, twoFactorCode)
+				}
+				val session = mega.dumpSession()
+				val quotaStr = try {
+					val quota = kotlinx.coroutines.runBlocking { mega.getQuota() }
+					val usedGb = quota.spaceUsedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+					val totalGb = quota.spaceCapacityBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+					" (%.1f GB / %.1f GB)".format(java.util.Locale.US, usedGb, totalGb)
+				} catch (e: Exception) {
+					""
+				}
+				val currentCloud = view?.intent()?.cloud()?.toCloud()
+				val updatedCloud = if (currentCloud is MegaCloud) {
+					MegaCloud.aCopyOf(currentCloud)
+						.withUsername(email + quotaStr)
+						.withAccessToken(session)
+						.build()
+				} else {
+					MegaCloud.aMegaCloud()
+						.withUsername(email + quotaStr)
+						.withAccessToken(session)
+						.build()
+				}
+				activity().runOnUiThread {
+					view?.showProgress(ProgressModel.COMPLETED)
+					succeedAuthenticationWith(updatedCloud)
+				}
+			} catch (e: Throwable) {
+				activity().runOnUiThread {
+					view?.showProgress(ProgressModel.COMPLETED)
+					showError(e)
+					failAuthentication(R.string.cloud_names_mega)
+				}
+			}
 		}
 	}
 

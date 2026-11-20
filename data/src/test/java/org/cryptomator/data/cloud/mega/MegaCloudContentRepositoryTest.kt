@@ -1,0 +1,261 @@
+package org.cryptomator.data.cloud.mega
+
+import android.content.Context
+import dev.carlsen.mega.Mega
+import dev.carlsen.mega.dto.QuotaResp
+import dev.carlsen.mega.model.MegaFS
+import dev.carlsen.mega.model.Node
+import dev.carlsen.mega.model.NodeType
+import kotlinx.coroutines.runBlocking
+import kotlin.time.Instant
+import org.cryptomator.domain.MegaCloud
+import org.cryptomator.domain.exception.CloudNodeAlreadyExistsException
+import org.cryptomator.domain.exception.FatalBackendException
+import org.cryptomator.domain.exception.NetworkConnectionException
+import org.cryptomator.domain.exception.NoSuchCloudFileException
+import org.cryptomator.domain.usecases.ProgressAware
+import org.cryptomator.domain.usecases.cloud.DataSource
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.net.UnknownHostException
+
+class MegaCloudContentRepositoryTest {
+
+	private val cloud = MegaCloud.aMegaCloud().withId(1L).withUsername("alice@example.com").build()
+	private val mega = mock<Mega>()
+	private val context = mock<Context>()
+	private val fileSystem = MegaFS()
+
+	private val rootNode = Node().apply {
+		hash = "root_hash"
+		name = ""
+		nodeType = NodeType.ROOT
+	}
+
+	private val folder1Node = Node().apply {
+		hash = "f1_hash"
+		name = "vault"
+		nodeType = NodeType.FOLDER
+	}
+
+	private val folder2Node = Node().apply {
+		hash = "f2_hash"
+		name = "d"
+		nodeType = NodeType.FOLDER
+	}
+
+	private val fileNode = Node().apply {
+		hash = "file_hash"
+		name = "masterkey.cryptomator"
+		nodeType = NodeType.FILE
+		size = 512L
+		timestamp = Instant.fromEpochMilliseconds(1700000000000L)
+	}
+
+	private lateinit var repository: MegaCloudContentRepository
+
+	@BeforeEach
+	fun setup() {
+		fileSystem.root = rootNode
+		whenever(mega.getFileSystem()).thenReturn(fileSystem)
+		repository = MegaCloudContentRepository(cloud, mega, context)
+	}
+
+	@Test
+	fun testRootReturnsRootFolder() {
+		val root = repository.root(cloud)
+		assertEquals("root_hash", root.hash)
+		assertEquals("/", root.path)
+		assertEquals("", root.name)
+		assertEquals(cloud, root.cloud)
+	}
+
+	@Test
+	fun testResolveRootPath() {
+		val root = repository.resolve(cloud, "/")
+		assertEquals("root_hash", root.hash)
+		assertEquals("/", root.path)
+	}
+
+	@Test
+	fun testResolveSubfolderPathAndCache() {
+		whenever(mega.getChildren(rootNode)).thenReturn(listOf(folder1Node))
+		whenever(mega.getChildren(folder1Node)).thenReturn(listOf(folder2Node))
+
+		val resolved = repository.resolve(cloud, "/vault/d")
+		assertEquals("f2_hash", resolved.hash)
+		assertEquals("/vault/d", resolved.path)
+		assertEquals("d", resolved.name)
+		assertEquals("/vault", resolved.parent?.path)
+
+		// Second resolve uses cached hash
+		whenever(mega.getNodeByHash("f2_hash")).thenReturn(folder2Node)
+		val cachedResolved = repository.resolve(cloud, "/vault/d")
+		assertEquals("f2_hash", cachedResolved.hash)
+		verify(mega, times(1)).getChildren(folder1Node)
+	}
+
+	@Test
+	fun testExistsReturnsTrueWhenNodeExists() {
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(listOf(folder1Node))
+
+		val folder = MegaFolder(hash = "f1_hash", name = "vault", path = "/vault", parent = repository.root(cloud), cloud = cloud)
+		assertTrue(repository.exists(folder))
+	}
+
+	@Test
+	fun testExistsReturnsFalseWhenNodeNotFound() {
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(emptyList())
+
+		val folder = MegaFolder(hash = "", name = "nonexistent", path = "/nonexistent", parent = repository.root(cloud), cloud = cloud)
+		assertFalse(repository.exists(folder))
+	}
+
+	@Test
+	fun testListFolderContents() {
+		whenever(mega.getNodeByHash("f1_hash")).thenReturn(folder1Node)
+		whenever(mega.getChildren(folder1Node)).thenReturn(listOf(folder2Node, fileNode))
+
+		val parent = MegaFolder(hash = "f1_hash", name = "vault", path = "/vault", parent = repository.root(cloud), cloud = cloud)
+		val children = repository.list(parent)
+
+		assertEquals(2, children.size)
+		val childFolder = children.filterIsInstance<MegaFolder>().first()
+		assertEquals("d", childFolder.name)
+		assertEquals("/vault/d", childFolder.path)
+
+		val childFile = children.filterIsInstance<MegaFile>().first()
+		assertEquals("masterkey.cryptomator", childFile.name)
+		assertEquals("/vault/masterkey.cryptomator", childFile.path)
+		assertEquals(512L, childFile.size)
+	}
+
+	@Test
+	fun testCreateFolderSuccess() = runBlocking {
+		val targetFolder = MegaFolder(hash = "", name = "newFolder", path = "/newFolder", parent = repository.root(cloud), cloud = cloud)
+		val createdNode = Node().apply {
+			hash = "created_hash"
+			name = "newFolder"
+			nodeType = NodeType.FOLDER
+		}
+
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(emptyList())
+		whenever(mega.createDir(eq("newFolder"), eq(rootNode))).thenReturn(createdNode)
+
+		val result = repository.create(targetFolder)
+		assertEquals("created_hash", result.hash)
+		assertEquals("newFolder", result.name)
+	}
+
+	@Test
+	fun testDeleteNode() = runBlocking {
+		whenever(mega.getNodeByHash("f1_hash")).thenReturn(folder1Node)
+
+		val folder = MegaFolder(hash = "f1_hash", name = "vault", path = "/vault", parent = repository.root(cloud), cloud = cloud)
+		repository.delete(folder)
+
+		verify(mega).delete(folder1Node, true)
+	}
+
+	@Test
+	fun testMoveFolder() = runBlocking {
+		val srcFolder = MegaFolder(hash = "f1_hash", name = "vault", path = "/vault", parent = repository.root(cloud), cloud = cloud)
+		val destFolder = MegaFolder(hash = "", name = "vault", path = "/dest/vault", parent = MegaFolder(hash = "f2_hash", name = "dest", path = "/dest"), cloud = cloud)
+
+		whenever(mega.getNodeByHash("f1_hash")).thenReturn(folder1Node)
+		whenever(mega.getNodeByHash("f2_hash")).thenReturn(folder2Node)
+
+		repository.move(srcFolder, destFolder)
+
+		verify(mega).move(folder1Node, folder2Node)
+	}
+
+	@Test
+	fun testMetadataReturnsFileMetadata() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(listOf(fileNode))
+
+		val file = MegaFile(hash = "", name = "masterkey.cryptomator", path = "/masterkey.cryptomator", parent = root, cloud = cloud)
+		val meta = repository.metadata(file)
+
+		assertNotNull(meta)
+		assertEquals("file_hash", meta?.hash)
+		assertEquals(512L, meta?.size)
+		assertNotNull(meta?.modified)
+	}
+
+	@Test
+	fun testMetadataReturnsNullWhenFileNotFound() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(emptyList())
+
+		val file = MegaFile(hash = "", name = "missing.txt", path = "/missing.txt", parent = root, cloud = cloud)
+		val meta = repository.metadata(file)
+
+		assertNull(meta)
+	}
+
+	@Test
+	fun testWriteThrowsCloudNodeAlreadyExistsExceptionWhenReplaceFalse() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(listOf(fileNode))
+
+		val targetFile = MegaFile(hash = "", name = "masterkey.cryptomator", path = "/masterkey.cryptomator", parent = root, cloud = cloud)
+		val dataSource = mock<DataSource>()
+
+		assertThrows(CloudNodeAlreadyExistsException::class.java) {
+			repository.write(targetFile, dataSource, ProgressAware.NO_OP_PROGRESS_AWARE_UPLOAD, replace = false, size = 100L)
+		}
+	}
+
+	@Test
+	fun testNetworkExceptionMapping() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw UnknownHostException("api.mega.co.nz") }
+
+		assertThrows(NetworkConnectionException::class.java) {
+			repository.list(root)
+		}
+	}
+
+	@Test
+	fun testCheckAuthenticationWithQuota() = runBlocking {
+		val quotaResp = mock<QuotaResp>()
+		whenever(quotaResp.spaceCapacityBytes).thenReturn((20L * 1024 * 1024 * 1024).toULong())
+		whenever(quotaResp.spaceUsedBytes).thenReturn((5L * 1024 * 1024 * 1024).toULong())
+		whenever(mega.getQuota()).thenReturn(quotaResp)
+
+		val result = repository.checkAuthenticationAndRetrieveCurrentAccount(cloud)
+		assertTrue(result.contains("alice@example.com"))
+		assertTrue(result.contains("5.0 GB / 20.0 GB"))
+	}
+
+	@Test
+	fun testCheckAuthenticationFallbackOnQuotaFailure() = runBlocking {
+		whenever(mega.getQuota()).thenAnswer { throw IllegalStateException("Quota API failed") }
+
+		val result = repository.checkAuthenticationAndRetrieveCurrentAccount(cloud)
+		assertEquals("alice@example.com", result)
+	}
+}

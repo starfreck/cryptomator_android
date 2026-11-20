@@ -48,6 +48,7 @@ constructor(private val context: Context) : RecyclerViewBaseAdapter<CloudModel, 
 				CloudTypeModel.PCLOUD -> binding.cloudName.text = context.getString(R.string.screen_cloud_settings_pcloud_connections)
 				CloudTypeModel.BOX -> binding.cloudName.text = context.getString(R.string.screen_cloud_settings_box_connections)
 				CloudTypeModel.S3 -> binding.cloudName.text = context.getString(R.string.screen_cloud_settings_s3_connections)
+				CloudTypeModel.MEGA -> binding.cloudName.text = context.getString(R.string.screen_cloud_settings_mega_connections)
 				CloudTypeModel.WEBDAV -> binding.cloudName.text = context.getString(R.string.screen_cloud_settings_webdav_connections)
 				CloudTypeModel.LOCAL -> binding.cloudName.text = context.getString(R.string.screen_cloud_settings_local_storage_locations)
 				else -> if (cloudModel.cloudType().webDavProvider != null) {

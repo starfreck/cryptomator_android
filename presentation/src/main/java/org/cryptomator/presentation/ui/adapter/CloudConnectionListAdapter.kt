@@ -10,6 +10,7 @@ import org.cryptomator.presentation.databinding.ItemBrowseCloudModelConnectionsB
 import org.cryptomator.presentation.model.BoxCloudModel
 import org.cryptomator.presentation.model.CloudModel
 import org.cryptomator.presentation.model.LocalStorageModel
+import org.cryptomator.presentation.model.MegaCloudModel
 import org.cryptomator.presentation.model.OnedriveCloudModel
 import org.cryptomator.presentation.model.PCloudModel
 import org.cryptomator.presentation.model.S3CloudModel
@@ -74,9 +75,26 @@ internal constructor(context: Context) : RecyclerViewBaseAdapter<CloudModel, Clo
 				is S3CloudModel -> {
 					bindS3loudModel(cloudModel)
 				}
+				is MegaCloudModel -> {
+					bindMegaCloudModel(cloudModel)
+				}
 				is LocalStorageModel -> {
 					bindLocalStorageCloudModel(cloudModel)
 				}
+			}
+		}
+
+		private fun bindMegaCloudModel(cloudModel: MegaCloudModel) {
+			val raw = cloudModel.username()?.ifEmpty { "MEGA User" } ?: "MEGA User"
+			if (raw.contains(" (") && raw.endsWith(")")) {
+				val email = raw.substringBefore(" (")
+				val quota = raw.substringAfter(" (").removeSuffix(")")
+				binding.llCloudConnectionContent.cloudText.text = email
+				binding.llCloudConnectionContent.cloudSubText.text = "$quota used"
+				binding.llCloudConnectionContent.cloudSubText.visibility = View.VISIBLE
+			} else {
+				binding.llCloudConnectionContent.cloudText.text = raw
+				binding.llCloudConnectionContent.cloudSubText.visibility = View.GONE
 			}
 		}
 

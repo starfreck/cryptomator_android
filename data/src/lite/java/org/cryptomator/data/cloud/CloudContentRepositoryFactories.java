@@ -4,6 +4,7 @@ import static java.util.Arrays.asList;
 
 import org.cryptomator.data.cloud.crypto.CryptoCloudContentRepositoryFactory;
 import org.cryptomator.data.cloud.local.LocalStorageContentRepositoryFactory;
+import org.cryptomator.data.cloud.mega.MegaCloudContentRepositoryFactory;
 import org.cryptomator.data.cloud.s3.S3CloudContentRepositoryFactory;
 import org.cryptomator.data.cloud.webdav.WebDavCloudContentRepositoryFactory;
 import org.cryptomator.data.repository.CloudContentRepositoryFactory;
@@ -23,12 +24,14 @@ public class CloudContentRepositoryFactories implements Iterable<CloudContentRep
 	public CloudContentRepositoryFactories(S3CloudContentRepositoryFactory s3Factory, //
 			CryptoCloudContentRepositoryFactory cryptoFactory, //
 			LocalStorageContentRepositoryFactory localStorageFactory, //
-			WebDavCloudContentRepositoryFactory webDavFactory) {
+			WebDavCloudContentRepositoryFactory webDavFactory, //
+			MegaCloudContentRepositoryFactory megaFactory) {
 
 		factories = asList(s3Factory, //
 				cryptoFactory, //
 				localStorageFactory, //
-				webDavFactory);
+				webDavFactory, //
+				megaFactory);
 	}
 
 	@NotNull

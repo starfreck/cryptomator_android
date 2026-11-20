@@ -119,6 +119,14 @@
 	<string name="cloud_names_webdav" translatable="false">WebDAV</string>
 	<string name="cloud_names_s3" translatable="false">S3</string>
 	<string name="cloud_names_local_storage">Local storage</string>
+	<string name="cloud_names_mega" translatable="false">MEGA</string>
+	<string name="dialog_enter_mega_title">Log in to MEGA</string>
+	<string name="dialog_enter_mega_email_hint">Email</string>
+	<string name="dialog_enter_mega_password_hint">Password</string>
+	<string name="dialog_enter_mega_2fa_hint">2FA Code (optional)</string>
+	<string name="dialog_enter_mega_positive_button">Log in</string>
+	<string name="dialog_enter_mega_negative_button">Cancel</string>
+	<string name="screen_cloud_settings_mega_connections">MEGA connections</string>
 	<string name="cloud_names_one_and_one" translatable="false">1&amp;1 Online-Speicher</string>
 	<string name="cloud_names_disroot" translatable="false">Disroot</string>
 	<string name="cloud_names_freenetcloud" translatable="false">freenetcloud</string>

@@ -14,6 +14,7 @@ import org.cryptomator.presentation.ui.activity.view.CloudConnectionListView
 import org.cryptomator.presentation.ui.bottomsheet.CloudConnectionSettingsBottomSheet
 import org.cryptomator.presentation.ui.dialog.ChooseSharepointDriveDialog
 import org.cryptomator.presentation.ui.dialog.DeleteCloudConnectionWithVaultsDialog
+import org.cryptomator.presentation.ui.dialog.EnterMegaCredentialsDialog
 import org.cryptomator.presentation.ui.dialog.EnterSharepointUrlDialog
 import org.cryptomator.presentation.ui.dialog.PCloudCredentialsUpdatedDialog
 import org.cryptomator.presentation.ui.fragment.CloudConnectionListFragment
@@ -26,7 +27,8 @@ class CloudConnectionListActivity : BaseActivity<ActivityLayoutBinding>(Activity
 	DeleteCloudConnectionWithVaultsDialog.Callback,
 	PCloudCredentialsUpdatedDialog.Callback,
 	EnterSharepointUrlDialog.Callback,
-	ChooseSharepointDriveDialog.Callback {
+	ChooseSharepointDriveDialog.Callback,
+	EnterMegaCredentialsDialog.Callback {
 
 	@Inject
 	lateinit var presenter: CloudConnectionListPresenter
@@ -92,5 +94,9 @@ class CloudConnectionListActivity : BaseActivity<ActivityLayoutBinding>(Activity
 
 	override fun onSharepointDriveChosen(cloud: SharepointCloud) {
 		presenter.onSharepointDriveChosen(cloud)
+	}
+
+	override fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
+		presenter.onMegaCredentialsEntered(email, password, twoFactorCode)
 	}
 }

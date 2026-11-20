@@ -70,6 +70,16 @@ class CloudTypeModelTest {
 	fun testVaultWithoutCloudResolvesToItsStoredType() {
 		assertEquals(CloudTypeModel.WEBDAV, VaultModel(vault().withCloudType(CloudType.WEBDAV).build()).cloudType)
 		assertEquals(CloudTypeModel.LOCAL, VaultModel(vault().withCloudType(CloudType.LOCAL).build()).cloudType)
+		assertEquals(CloudTypeModel.MEGA, VaultModel(vault().withCloudType(CloudType.MEGA).build()).cloudType)
+	}
+
+	@Test
+	fun testMegaResourcesAndProperties() {
+		val mega = CloudTypeModel.MEGA
+		assertEquals(org.cryptomator.presentation.R.drawable.mega, mega.cloudImageResource)
+		assertEquals(org.cryptomator.presentation.R.drawable.mega_vault, mega.vaultImageResource)
+		assertEquals(org.cryptomator.presentation.R.drawable.mega_vault_selected, mega.vaultSelectedImageResource)
+		assertTrue(mega.isMultiInstance)
 	}
 
 	private fun vault(): Vault.Builder {

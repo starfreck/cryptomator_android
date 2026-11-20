@@ -8,6 +8,7 @@ import org.cryptomator.presentation.databinding.DialogBottomSheetCloudSettingsBi
 import org.cryptomator.presentation.model.BoxCloudModel
 import org.cryptomator.presentation.model.CloudModel
 import org.cryptomator.presentation.model.LocalStorageModel
+import org.cryptomator.presentation.model.MegaCloudModel
 import org.cryptomator.presentation.model.OnedriveCloudModel
 import org.cryptomator.presentation.model.PCloudModel
 import org.cryptomator.presentation.model.S3CloudModel
@@ -33,6 +34,7 @@ class CloudConnectionSettingsBottomSheet : BaseBottomSheet<CloudConnectionSettin
 			is PCloudModel -> bindViewForPCloud(cloudModel)
 			is BoxCloudModel -> bindViewForBox(cloudModel)
 			is S3CloudModel -> bindViewForS3(cloudModel)
+			is MegaCloudModel -> bindViewForMega(cloudModel)
 			is LocalStorageModel -> bindViewForLocal(cloudModel)
 			else -> throw IllegalStateException("Cloud model is not binded in the view")
 		}
@@ -46,6 +48,12 @@ class CloudConnectionSettingsBottomSheet : BaseBottomSheet<CloudConnectionSettin
 			callback?.onDeleteCloudClicked(cloudModel)
 			dismiss()
 		}
+	}
+
+	private fun bindViewForMega(cloudModel: MegaCloudModel) {
+		binding.changeCloud.visibility = View.GONE
+		binding.tvCloudName.text = cloudModel.username()?.ifEmpty { "MEGA User" } ?: "MEGA User"
+		binding.tvCloudSubtext.visibility = View.GONE
 	}
 
 	private fun bindViewForLocal(cloudModel: LocalStorageModel) {

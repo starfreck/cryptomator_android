@@ -37,6 +37,7 @@ import org.cryptomator.presentation.model.WebDavCloudModel
 import org.cryptomator.presentation.model.mappers.CloudModelMapper
 import org.cryptomator.presentation.ui.activity.view.CloudConnectionListView
 import org.cryptomator.presentation.ui.dialog.ChooseSharepointDriveDialog
+import org.cryptomator.presentation.ui.dialog.EnterMegaCredentialsDialog
 import org.cryptomator.presentation.ui.dialog.EnterSharepointUrlDialog
 import org.cryptomator.presentation.ui.dialog.PCloudCredentialsUpdatedDialog
 import org.cryptomator.presentation.workflow.ActivityResult
@@ -81,8 +82,25 @@ class CloudConnectionListPresenter @Inject constructor( //
 				override fun onSuccess(clouds: List<Cloud>) {
 					val cloudModels = clouds.map { cloud -> cloudModelMapper.toModel(cloud) }
 					view?.showCloudModels(cloudModels.filter { includeWebDavProviderClouds || it.cloudType() == selectedCloudType.get() })
+					if (selectedCloudType.get() == CloudTypeModel.MEGA) {
+						refreshMegaQuotas(clouds.filterIsInstance<org.cryptomator.domain.MegaCloud>())
+					}
 				}
 			})
+	}
+
+	private fun refreshMegaQuotas(megaClouds: List<org.cryptomator.domain.MegaCloud>) {
+		for (cloud in megaClouds) {
+			if (cloud.username()?.contains("(") != true) {
+				getUsernameUseCase.withCloud(cloud).run(object : DefaultResultHandler<String>() {
+					override fun onSuccess(updatedUsername: String) {
+						if (updatedUsername != cloud.username()) {
+							saveCloud(org.cryptomator.domain.MegaCloud.aCopyOf(cloud).withUsername(updatedUsername).build())
+						}
+					}
+				})
+			}
+		}
 	}
 
 	fun onDeleteCloudClicked(cloudModel: CloudModel) {
@@ -99,7 +117,7 @@ class CloudConnectionListPresenter @Inject constructor( //
 	}
 
 	private fun vaultsFor(cloudModel: CloudModel, allVaults: List<Vault>): ArrayList<Vault> {
-		return allVaults.filterTo(ArrayList()) { it.cloud.id() == cloudModel.toCloud().id() }
+		return allVaults.filterTo(ArrayList()) { it.cloud?.id() == cloudModel.toCloud().id() }
 	}
 
 	fun onDeleteCloudConnectionAndVaults(cloudModel: CloudModel, vaultsOfCloud: ArrayList<Vault>) {
@@ -151,6 +169,7 @@ class CloudConnectionListPresenter @Inject constructor( //
 			CloudTypeModel.PCLOUD -> requestActivityResult(ActivityResultCallbacks.pCloudAuthenticationFinished(), Intents.authenticatePCloudIntent())
 			CloudTypeModel.BOX -> requestActivityResult(ActivityResultCallbacks.boxAuthenticationFinished(), Intents.authenticateBoxIntent())
 			CloudTypeModel.S3 -> requestActivityResult(ActivityResultCallbacks.addChangeMultiCloud(), Intents.s3AddOrChangeIntent())
+			CloudTypeModel.MEGA -> view?.showDialog(EnterMegaCredentialsDialog.newInstance())
 			CloudTypeModel.LOCAL -> openDocumentTree()
 			else -> addWebDavProviderCloud()
 		}
@@ -200,6 +219,40 @@ class CloudConnectionListPresenter @Inject constructor( //
 		MicrosoftGraphAuthentication.getAuthenticatedSharepointCloud(activity(), siteUrl, { cloud ->
 			loadSharepointDrives(cloud)
 		}, ::showAuthenticationError)
+	}
+
+	fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
+		showProgress(ProgressModel(ProgressStateModel.AUTHENTICATION))
+		kotlin.concurrent.thread {
+			try {
+				val mega = dev.carlsen.mega.Mega(retries = 1)
+				kotlinx.coroutines.runBlocking {
+					mega.login(email, password, twoFactorCode)
+				}
+				val session = mega.dumpSession()
+				val quotaStr = try {
+					val quota = kotlinx.coroutines.runBlocking { mega.getQuota() }
+					val usedGb = quota.spaceUsedBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+					val totalGb = quota.spaceCapacityBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+					" (%.1f GB / %.1f GB)".format(java.util.Locale.US, usedGb, totalGb)
+				} catch (e: Exception) {
+					""
+				}
+				val megaCloud = org.cryptomator.domain.MegaCloud.aMegaCloud()
+					.withUsername(email + quotaStr)
+					.withAccessToken(session)
+					.build()
+				activity().runOnUiThread {
+					view?.showProgress(ProgressModel.COMPLETED)
+					saveCloud(megaCloud)
+				}
+			} catch (e: Throwable) {
+				activity().runOnUiThread {
+					view?.showProgress(ProgressModel.COMPLETED)
+					showError(e)
+				}
+			}
+		}
 	}
 
 	internal fun loadSharepointDrives(sharepointSkeleton: SharepointCloud) {
@@ -293,6 +346,9 @@ class CloudConnectionListPresenter @Inject constructor( //
 					Intents.s3AddOrChangeIntent() //
 						.withS3Cloud(cloudModel as S3CloudModel)
 				)
+			}
+			cloudModel.cloudType() == CloudTypeModel.MEGA -> {
+				view?.showDialog(EnterMegaCredentialsDialog.newInstance())
 			}
 			else -> {
 				throw IllegalStateException("Change cloud with type " + cloudModel.cloudType() + " is not supported")

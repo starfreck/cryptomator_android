@@ -3,6 +3,7 @@ package org.cryptomator.presentation.presenter
 import org.cryptomator.domain.BoxCloud
 import org.cryptomator.domain.Cloud
 import org.cryptomator.domain.LocalStorageCloud
+import org.cryptomator.domain.MegaCloud
 import org.cryptomator.domain.OnedriveCloud
 import org.cryptomator.domain.PCloud
 import org.cryptomator.domain.S3Cloud
@@ -22,6 +23,7 @@ import org.cryptomator.presentation.model.BoxCloudModel
 import org.cryptomator.presentation.model.CloudModel
 import org.cryptomator.presentation.model.CloudTypeModel
 import org.cryptomator.presentation.model.LocalStorageModel
+import org.cryptomator.presentation.model.MegaCloudModel
 import org.cryptomator.presentation.model.OnedriveCloudModel
 import org.cryptomator.presentation.model.PCloudModel
 import org.cryptomator.presentation.model.S3CloudModel
@@ -98,6 +100,7 @@ class CloudSettingsPresenter @Inject constructor( //
 			CloudTypeModel.BOX -> return context().getString(R.string.screen_cloud_settings_box_connections)
 			CloudTypeModel.WEBDAV -> return context().getString(R.string.screen_cloud_settings_webdav_connections)
 			CloudTypeModel.S3 -> return context().getString(R.string.screen_cloud_settings_s3_connections)
+			CloudTypeModel.MEGA -> return context().getString(R.string.screen_cloud_settings_mega_connections)
 			CloudTypeModel.LOCAL -> return context().getString(R.string.screen_cloud_settings_local_storage_locations)
 			else -> {}
 		}
@@ -109,8 +112,10 @@ class CloudSettingsPresenter @Inject constructor( //
 
 	@Callback
 	fun webDavConnectionListFinisheds(result: ActivityResult) {
-		val cloud = result.intent().getSerializableExtra(CloudConnectionListPresenter.SELECTED_CLOUD) as Cloud
-		startAuthentication(cloud)
+		val cloud = result.intent()?.getSerializableExtra(CloudConnectionListPresenter.SELECTED_CLOUD) as? Cloud
+		if (cloud != null) {
+			startAuthentication(cloud)
+		}
 	}
 
 	private fun startAuthentication(cloud: Cloud) {
@@ -142,6 +147,7 @@ class CloudSettingsPresenter @Inject constructor( //
 					it.addAll(webDavProviderClouds(clouds))
 					it.add(aS3Cloud())
 					it.add(aLocalCloud())
+					it.add(aMegaCloud())
 				}
 				.filter { cloud -> !(FlavorConfig.isLiteFlavor && excludeApiCloudsInLite(cloud.cloudType())) } //
 			view?.render(cloudModel)
@@ -201,6 +207,10 @@ class CloudSettingsPresenter @Inject constructor( //
 
 		private fun aS3Cloud(): S3CloudModel {
 			return S3CloudModel(S3Cloud.aS3Cloud().build())
+		}
+
+		private fun aMegaCloud(): MegaCloudModel {
+			return MegaCloudModel(MegaCloud.aMegaCloud().build())
 		}
 
 		private fun aLocalCloud(): CloudModel {

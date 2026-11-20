@@ -81,6 +81,10 @@ class CloudRepositoryImpl implements CloudRepository {
 		if (!cloud.persistent()) {
 			throw new IllegalArgumentException("Can not delete non persistent cloud");
 		}
+		try {
+			dispatchingCloudContentRepository.logout(cloud);
+		} catch (Exception ignored) {
+		}
 		cloudDao.delete(mapper.toEntity(cloud));
 		dispatchingCloudContentRepository.removeCloudContentRepositoryFor(cloud);
 	}

@@ -18,6 +18,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 
 import static org.cryptomator.domain.BoxCloud.aBoxCloud;
+import static org.cryptomator.domain.MegaCloud.aMegaCloud;
 import static org.cryptomator.domain.DropboxCloud.aDropboxCloud;
 import static org.cryptomator.domain.GoogleDriveCloud.aGoogleDriveCloud;
 import static org.cryptomator.domain.LocalStorageCloud.aLocalStorage;
@@ -100,6 +101,12 @@ public class CloudEntityMapper extends EntityMapper<CloudEntity, Cloud> {
 						.withCertificate(entity.getWebdavCertificate()) //
 						.withProvider(entity.getWebdavProvider() == null ? null : WebDavProvider.valueOf(entity.getWebdavProvider())) //
 						.build();
+			case MEGA:
+				return aMegaCloud() //
+						.withId(entity.getId()) //
+						.withAccessToken(entity.getAccessToken()) //
+						.withUsername(entity.getUsername()) //
+						.build();
 			default:
 				throw new IllegalStateException("Unhandled enum constant " + type);
 		}
@@ -156,6 +163,10 @@ public class CloudEntityMapper extends EntityMapper<CloudEntity, Cloud> {
 				result.setWebdavCertificate(((WebDavCloud) domainObject).certificate());
 				WebDavProvider provider = ((WebDavCloud) domainObject).provider();
 				result.setWebdavProvider(provider == null ? null : provider.name());
+				break;
+			case MEGA:
+				result.setUsername(((org.cryptomator.domain.MegaCloud) domainObject).username());
+				result.setAccessToken(((org.cryptomator.domain.MegaCloud) domainObject).accessToken());
 				break;
 			default:
 				throw new IllegalStateException("Unhandled enum constant " + domainObject.type());
