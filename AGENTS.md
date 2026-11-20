@@ -56,7 +56,7 @@ The MEGA integration is designed surgically using factory patterns so the blast 
   - `domain/src/main/java/org/cryptomator/domain/CloudType.kt`: Added `MEGA`.
   - `domain/src/main/java/org/cryptomator/domain/MegaCloud.kt`: Domain model for MEGA account connection (holds username, session token, quota info).
 - **Data Layer**:
-  - `data/build.gradle`: Dependency `io.github.alessandrojean:mega-java-api:1.0.0`.
+  - `data/build.gradle`: Dependency `dev.carlsen.mega:mega:1.0.0-beta08`.
   - `data/src/main/java/org/cryptomator/data/cloud/mega/`:
     - `MegaClientManager.kt`: Manages `MegaApiAndroid` instances, sessions, credentials, and authentication state.
     - `MegaCloudContentRepository.kt`: Implements `CloudContentRepository` (file listing, streaming read/write, directory creation, deletion, moves, quota lookup).
