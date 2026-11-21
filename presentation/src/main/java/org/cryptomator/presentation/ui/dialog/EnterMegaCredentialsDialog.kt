@@ -10,7 +10,7 @@ import org.cryptomator.presentation.databinding.DialogEnterMegaCredentialsBindin
 class EnterMegaCredentialsDialog : BaseDialog<EnterMegaCredentialsDialog.Callback, DialogEnterMegaCredentialsBinding>(DialogEnterMegaCredentialsBinding::inflate) {
 
 	interface Callback {
-		fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String)
+		fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String, nickname: String = "")
 	}
 
 	override fun onStart() {
@@ -21,6 +21,7 @@ class EnterMegaCredentialsDialog : BaseDialog<EnterMegaCredentialsDialog.Callbac
 				val email = binding.etMegaEmail.text?.toString()?.trim() ?: ""
 				val password = binding.etMegaPassword.text?.toString() ?: ""
 				val twoFactorCode = binding.etMega2fa.text?.toString()?.trim() ?: ""
+				val nickname = binding.etMegaNickname.text?.toString()?.trim() ?: ""
 
 				if (email.isEmpty()) {
 					binding.tilMegaEmail.error = getString(R.string.screen_webdav_settings_msg_username_must_not_be_empty)
@@ -31,7 +32,7 @@ class EnterMegaCredentialsDialog : BaseDialog<EnterMegaCredentialsDialog.Callbac
 					return@setOnClickListener
 				}
 
-				callback?.onMegaCredentialsEntered(email, password, twoFactorCode)
+				callback?.onMegaCredentialsEntered(email, password, twoFactorCode, nickname)
 				dismiss()
 			}
 			it.setCanceledOnTouchOutside(false)

@@ -106,6 +106,7 @@ public class CloudEntityMapper extends EntityMapper<CloudEntity, Cloud> {
 						.withId(entity.getId()) //
 						.withAccessToken(entity.getAccessToken()) //
 						.withUsername(entity.getUsername()) //
+						.withNickname(entity.getUrl()) //
 						.build();
 			default:
 				throw new IllegalStateException("Unhandled enum constant " + type);
@@ -167,6 +168,7 @@ public class CloudEntityMapper extends EntityMapper<CloudEntity, Cloud> {
 			case MEGA:
 				result.setUsername(((org.cryptomator.domain.MegaCloud) domainObject).username());
 				result.setAccessToken(((org.cryptomator.domain.MegaCloud) domainObject).accessToken());
+				result.setUrl(((org.cryptomator.domain.MegaCloud) domainObject).nickname());
 				break;
 			default:
 				throw new IllegalStateException("Unhandled enum constant " + domainObject.type());

@@ -578,57 +578,77 @@ class MegaCloudContentRepository(
 		progressAware.onProgress(Progress.started(UploadState.upload(file)))
 
 		val uploadName = if (existing != null) "${file.name}.cryptomator_tmp_${java.util.UUID.randomUUID().toString().take(8)}" else file.name
-		val inputStream = data.open(context) ?: throw FatalBackendException("Cannot open data stream")
 
-		val uploadedNode: Node = try {
-			inputStream.use { input ->
-				val source = input.asSource().buffered()
-				runBlocking {
-					mega.uploadFile(
-						destNode = targetParentNode,
-						name = uploadName,
-						fileSize = if (size >= 0L) size else 0L,
-						fileInputSource = source,
-						cancellationToken = cancellationToken,
-						onProgress = { transferred, total ->
-							if (Thread.currentThread().isInterrupted) {
-								cancellationToken.cancel()
+		var attempt = 0
+		val maxRetries = 2
+		var lastException: Exception? = null
+		var uploadedNode: Node? = null
+
+		while (attempt <= maxRetries && uploadedNode == null) {
+			if (Thread.currentThread().isInterrupted || cancellationToken.isCancellationRequested()) {
+				throw CancellationException()
+			}
+			val inputStream = data.open(context) ?: throw FatalBackendException("Cannot open data stream")
+			try {
+				uploadedNode = inputStream.use { input ->
+					val source = input.asSource().buffered()
+					runBlocking {
+						mega.uploadFile(
+							destNode = targetParentNode,
+							name = uploadName,
+							fileSize = if (size >= 0L) size else 0L,
+							fileInputSource = source,
+							cancellationToken = cancellationToken,
+							onProgress = { transferred, total ->
+								if (Thread.currentThread().isInterrupted) {
+									cancellationToken.cancel()
+								}
+								progressAware.onProgress(
+									Progress.progress(UploadState.upload(file))
+										.between(0L)
+										.and(total)
+										.withValue(transferred)
+								)
 							}
-							progressAware.onProgress(
-								Progress.progress(UploadState.upload(file))
-									.between(0L)
-									.and(total)
-									.withValue(transferred)
-							)
-						}
-					)
+						)
+					}
+				}
+			} catch (e: Exception) {
+				if (cancellationToken.isCancellationRequested()) {
+					throw CancellationException(e)
+				}
+				lastException = e
+				attempt++
+				if (attempt <= maxRetries) {
+					try {
+						Thread.sleep(1000L * attempt)
+					} catch (interrupted: InterruptedException) {
+						throw CancellationException(interrupted)
+					}
 				}
 			}
-		} catch (e: Exception) {
-			if (cancellationToken.isCancellationRequested()) {
-				throw CancellationException(e)
-			}
-			throw e
 		}
+
+		val finalUploadedNode = uploadedNode ?: throw (lastException ?: FatalBackendException("Upload failed"))
 
 		if (existing != null) {
 			runBlocking {
 				try {
 					mega.delete(existing, true)
 				} catch (ignored: Exception) {}
-				mega.rename(uploadedNode, file.name)
+				mega.rename(finalUploadedNode, file.name)
 			}
 			if (existing.hash.isNotEmpty()) {
 				cacheDir?.listFiles { _, name -> name.startsWith(existing.hash) }?.forEach { it.delete() }
 			}
 		}
 
-		pathToHashCache[file.path] = uploadedNode.hash
+		pathToHashCache[file.path] = finalUploadedNode.hash
 		progressAware.onProgress(Progress.completed(UploadState.upload(file)))
 		file.copy(
-			hash = uploadedNode.hash,
-			size = uploadedNode.size,
-			modified = Date(uploadedNode.timestamp.toEpochMilliseconds())
+			hash = finalUploadedNode.hash,
+			size = finalUploadedNode.size,
+			modified = Date(finalUploadedNode.timestamp.toEpochMilliseconds())
 		)
 	}
 

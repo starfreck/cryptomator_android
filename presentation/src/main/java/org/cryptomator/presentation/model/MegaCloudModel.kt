@@ -11,7 +11,13 @@ class MegaCloudModel(cloud: Cloud) : CloudModel(cloud) {
 	}
 
 	override fun username(): String? {
-		return cloud().username()
+		val nick = cloud().nickname()
+		val user = cloud().username()
+		return if (!nick.isNullOrBlank()) {
+			"$nick • $user"
+		} else {
+			user
+		}
 	}
 
 	fun id(): Long? {

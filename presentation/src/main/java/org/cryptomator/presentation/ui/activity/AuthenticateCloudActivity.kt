@@ -47,7 +47,7 @@ class AuthenticateCloudActivity : BaseActivity<ActivityEmptyBinding>(ActivityEmp
 		presenter.onAcceptWebDavCertificateDenied()
 	}
 
-	override fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
-		presenter.onMegaCredentialsEntered(email, password, twoFactorCode)
+	override fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String, nickname: String) {
+		presenter.onMegaCredentialsEntered(email, password, twoFactorCode, nickname)
 	}
 }

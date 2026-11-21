@@ -5,6 +5,7 @@ class MegaCloud private constructor(builder: Builder) : Cloud {
 	private val id: Long? = builder.id
 	private val accessToken: String? = builder.accessToken
 	private val username: String? = builder.username
+	private val nickname: String? = builder.nickname
 
 	companion object {
 		@JvmStatic
@@ -15,11 +16,13 @@ class MegaCloud private constructor(builder: Builder) : Cloud {
 			.withId(cloud.id())
 			.withAccessToken(cloud.accessToken())
 			.withUsername(cloud.username())
+			.withNickname(cloud.nickname())
 	}
 
 	override fun id(): Long? = id
 	fun accessToken(): String? = accessToken
 	fun username(): String? = username
+	fun nickname(): String? = nickname
 
 	override fun type(): CloudType = CloudType.MEGA
 	fun accountEmail(): String = (username ?: "").substringBefore(" (").trim().lowercase()
@@ -47,10 +50,12 @@ class MegaCloud private constructor(builder: Builder) : Cloud {
 		internal var id: Long? = null
 		internal var accessToken: String? = null
 		internal var username: String? = null
+		internal var nickname: String? = null
 
 		fun withId(id: Long?): Builder = apply { this.id = id }
 		fun withAccessToken(token: String?): Builder = apply { this.accessToken = token }
 		fun withUsername(username: String?): Builder = apply { this.username = username }
+		fun withNickname(nickname: String?): Builder = apply { this.nickname = nickname }
 
 		fun build(): MegaCloud = MegaCloud(this)
 	}

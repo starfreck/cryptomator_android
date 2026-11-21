@@ -70,6 +70,13 @@
 			app:drawableStartCompat="@drawable/ic_edit" />
 
 		<TextView
+			android:id="@+id/clear_cache"
+			style="@style/AppTheme.ListItem"
+			android:text="@string/screen_cloud_settings_option_clear_cache"
+			android:visibility="gone"
+			app:drawableStartCompat="@drawable/ic_clear" />
+
+		<TextView
 			android:id="@+id/delete_cloud"
 			style="@style/AppTheme.ListItem"
 			android:text="@string/screen_cloud_settings_option_delete"

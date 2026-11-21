@@ -2,6 +2,7 @@ package org.cryptomator.presentation.ui.bottomsheet
 
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import org.cryptomator.generator.BottomSheet
 import org.cryptomator.presentation.R
 import org.cryptomator.presentation.databinding.DialogBottomSheetCloudSettingsBinding
@@ -54,6 +55,20 @@ class CloudConnectionSettingsBottomSheet : BaseBottomSheet<CloudConnectionSettin
 		binding.changeCloud.visibility = View.GONE
 		binding.tvCloudName.text = cloudModel.username()?.ifEmpty { "MEGA User" } ?: "MEGA User"
 		binding.tvCloudSubtext.visibility = View.GONE
+
+		val cacheDir = java.io.File(requireContext().cacheDir, "mega_cache")
+		val cacheSize = if (cacheDir.exists()) cacheDir.listFiles()?.sumOf { it.length() } ?: 0L else 0L
+		val cacheMb = cacheSize.toDouble() / (1024.0 * 1024.0)
+		binding.clearCache.visibility = View.VISIBLE
+		binding.clearCache.text = getString(R.string.screen_cloud_settings_option_clear_cache) + " (%.1f MB)".format(java.util.Locale.US, cacheMb)
+		binding.clearCache.setOnClickListener {
+			if (cacheDir.exists()) {
+				cacheDir.deleteRecursively()
+				cacheDir.mkdirs()
+			}
+			Toast.makeText(requireContext(), "Local cache cleared", Toast.LENGTH_SHORT).show()
+			dismiss()
+		}
 	}
 
 	private fun bindViewForLocal(cloudModel: LocalStorageModel) {

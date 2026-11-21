@@ -12,11 +12,13 @@ class MegaCloudTest {
 			.withId(101L)
 			.withUsername("alice@example.com")
 			.withAccessToken("testSessionKey")
+			.withNickname("Personal")
 			.build()
 
 		assertEquals(101L, cloud.id())
 		assertEquals("alice@example.com", cloud.username())
 		assertEquals("testSessionKey", cloud.accessToken())
+		assertEquals("Personal", cloud.nickname())
 		assertEquals(CloudType.MEGA, cloud.type())
 		assertTrue(cloud.persistent())
 		assertTrue(cloud.requiresNetwork())

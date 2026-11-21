@@ -578,7 +578,7 @@ class AuthenticateCloudPresenter @Inject constructor( //
 		}
 	}
 
-	fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
+	fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String, nickname: String = "") {
 		showProgress(ProgressModel(ProgressStateModel.AUTHENTICATION))
 		kotlin.concurrent.thread {
 			try {
@@ -600,11 +600,13 @@ class AuthenticateCloudPresenter @Inject constructor( //
 					MegaCloud.aCopyOf(currentCloud)
 						.withUsername(email + quotaStr)
 						.withAccessToken(session)
+						.withNickname(nickname.ifBlank { currentCloud.nickname() })
 						.build()
 				} else {
 					MegaCloud.aMegaCloud()
 						.withUsername(email + quotaStr)
 						.withAccessToken(session)
+						.withNickname(nickname.ifBlank { null })
 						.build()
 				}
 				activity().runOnUiThread {

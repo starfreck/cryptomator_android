@@ -236,7 +236,7 @@ class CloudConnectionListPresenter @Inject constructor( //
 		}, ::showAuthenticationError)
 	}
 
-	fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String) {
+	fun onMegaCredentialsEntered(email: String, password: String, twoFactorCode: String, nickname: String = "") {
 		showProgress(ProgressModel(ProgressStateModel.AUTHENTICATION))
 		kotlin.concurrent.thread {
 			try {
@@ -256,6 +256,7 @@ class CloudConnectionListPresenter @Inject constructor( //
 				val megaCloud = org.cryptomator.domain.MegaCloud.aMegaCloud()
 					.withUsername(email + quotaStr)
 					.withAccessToken(session)
+					.withNickname(nickname.ifBlank { null })
 					.build()
 				activity().runOnUiThread {
 					view?.showProgress(ProgressModel.COMPLETED)
@@ -287,6 +288,7 @@ class CloudConnectionListPresenter @Inject constructor( //
 							org.cryptomator.domain.MegaCloud.aCopyOf(it)
 								.withUsername(cloud.username())
 								.withAccessToken(cloud.accessToken())
+								.withNickname(cloud.nickname() ?: it.nickname())
 								.build()
 						)
 						Timber.tag("CloudConnListPresenter").i("MEGA credentials updated")

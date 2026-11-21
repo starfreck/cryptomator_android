@@ -124,8 +124,10 @@
 	<string name="dialog_enter_mega_email_hint">Email</string>
 	<string name="dialog_enter_mega_password_hint">Password</string>
 	<string name="dialog_enter_mega_2fa_hint">2FA Code (optional)</string>
+	<string name="dialog_enter_mega_nickname_hint">Account Nickname (optional, e.g. Personal)</string>
 	<string name="dialog_enter_mega_positive_button">Log in</string>
 	<string name="dialog_enter_mega_negative_button">Cancel</string>
+	<string name="screen_cloud_settings_option_clear_cache">Clear Local Cache</string>
 	<string name="screen_cloud_settings_mega_connections">MEGA connections</string>
 	<string name="cloud_names_one_and_one" translatable="false">1&amp;1 Online-Speicher</string>
 	<string name="cloud_names_disroot" translatable="false">Disroot</string>

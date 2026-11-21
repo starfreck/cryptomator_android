@@ -82,6 +82,20 @@ class CloudTypeModelTest {
 		assertTrue(mega.isMultiInstance)
 	}
 
+	@Test
+	fun testMegaCloudModelDisplaysNicknameWhenPresent() {
+		val cloudWithNick = org.cryptomator.domain.MegaCloud.aMegaCloud()
+			.withUsername("alice@example.com")
+			.withNickname("Personal")
+			.build()
+		assertEquals("Personal • alice@example.com", MegaCloudModel(cloudWithNick).username())
+
+		val cloudWithoutNick = org.cryptomator.domain.MegaCloud.aMegaCloud()
+			.withUsername("alice@example.com")
+			.build()
+		assertEquals("alice@example.com", MegaCloudModel(cloudWithoutNick).username())
+	}
+
 	private fun vault(): Vault.Builder {
 		return Vault.aVault().withId(1L).withName("vault").withPath("/vault").withPosition(0)
 	}
