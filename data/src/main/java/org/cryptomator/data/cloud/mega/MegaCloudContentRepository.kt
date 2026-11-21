@@ -67,6 +67,7 @@ class MegaCloudContentRepository(
 				-9 -> throw NoSuchCloudFileException(e.message ?: "Resource not found")
 				-11, -15, -16 -> throw WrongCredentialsException(cloud)
 				-3, -4, -18 -> throw NetworkConnectionException(e)
+				-17 -> throw FatalBackendException("MEGA transfer quota exceeded. Free accounts have bandwidth limits (wait a few hours or upgrade account).")
 				else -> {
 					val msg = e.message ?: ""
 					if (msg.contains("401") || msg.contains("403") || msg.contains("Session expired", ignoreCase = true)) {

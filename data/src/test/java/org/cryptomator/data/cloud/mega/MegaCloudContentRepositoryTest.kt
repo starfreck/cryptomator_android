@@ -309,6 +309,16 @@ class MegaCloudContentRepositoryTest {
 	}
 
 	@Test
+	fun testMegaExceptionOverQuotaMapping() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw dev.carlsen.mega.model.MegaException("Over quota", null, -17) }
+		val ex = assertThrows(FatalBackendException::class.java) {
+			repository.list(root)
+		}
+		assertTrue(ex.message?.contains("transfer quota exceeded") == true)
+	}
+
+	@Test
 	fun testNetworkExceptionMapping() {
 		val root = repository.root(cloud)
 		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw UnknownHostException("api.mega.co.nz") }
