@@ -351,6 +351,19 @@ class CryptoImplVaultFormat7Test {
 	}
 
 	@Test
+	@DisplayName("read() propagates BackendException from download thread")
+	fun testReadPropagatesBackendException() {
+		Mockito.doAnswer {
+			throw NoSuchCloudFileException("File not found in cloud")
+		}.whenever(cloudContentRepository).read(eq(cryptoFile1.cloudFile), any(), any())
+
+		val outputStream = ByteArrayOutputStream()
+		Assertions.assertThrows(NoSuchCloudFileException::class.java) {
+			inTest.read(cryptoFile1, outputStream, ProgressAware.NO_OP_PROGRESS_AWARE_DOWNLOAD)
+		}
+	}
+
+	@Test
 	@DisplayName("write(\"/File 1\", text, NO_PROGRESS_AWARE, replace=false, 10bytes)")
 	@Throws(BackendException::class)
 	fun testWriteToShortFile() {
