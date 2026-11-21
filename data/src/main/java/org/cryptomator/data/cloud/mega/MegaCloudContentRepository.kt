@@ -4,6 +4,9 @@ import android.content.Context
 import dev.carlsen.mega.Mega
 import dev.carlsen.mega.model.Node
 import dev.carlsen.mega.util.CancellationToken
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.asSink
 import kotlinx.io.asSource
@@ -47,6 +50,30 @@ class MegaCloudContentRepository(
 		}
 	)
 
+	private val cacheDir: File?
+		get() = try {
+			context.cacheDir?.let {
+				File(it, "mega_cache").apply { if (!exists()) mkdirs() }
+			}
+		} catch (e: Exception) {
+			null
+		}
+
+	private fun pruneCacheIfNecessary() {
+		val dir = cacheDir ?: return
+		val files = dir.listFiles { _, name -> !name.endsWith(".tmp") } ?: return
+		val totalSize = files.sumOf { it.length() }
+		if (totalSize > MAX_TOTAL_CACHE_SIZE) {
+			val sorted = files.sortedBy { it.lastModified() }
+			var currentSize = totalSize
+			for (f in sorted) {
+				if (currentSize <= MAX_TOTAL_CACHE_SIZE * 0.7) break
+				currentSize -= f.length()
+				f.delete()
+			}
+		}
+	}
+
 	private inline fun <T> handleExceptions(block: () -> T): T {
 		return try {
 			block()
@@ -67,7 +94,11 @@ class MegaCloudContentRepository(
 				-9 -> throw NoSuchCloudFileException(e.message ?: "Resource not found")
 				-11, -15, -16 -> throw WrongCredentialsException(cloud)
 				-3, -4, -18 -> throw NetworkConnectionException(e)
-				-17 -> throw FatalBackendException("MEGA transfer quota exceeded. Free accounts have bandwidth limits (wait a few hours or upgrade account).")
+				-17 -> {
+					val waitMatch = Regex("""(\d+)\s*(?:seconds?|secs?|s|hours?|hrs?|h|minutes?|mins?|m)""", RegexOption.IGNORE_CASE).find(e.message ?: "")
+					val waitHint = if (waitMatch != null) " (retry in ${waitMatch.value})" else " (resets in ~4–6 hours)"
+					throw FatalBackendException("MEGA transfer quota exceeded$waitHint. Free accounts have bandwidth limits (wait or upgrade account).")
+				}
 				else -> {
 					val msg = e.message ?: ""
 					if (msg.contains("401") || msg.contains("403") || msg.contains("Session expired", ignoreCase = true)) {
@@ -231,7 +262,44 @@ class MegaCloudContentRepository(
 		} ?: throw NoSuchCloudFileException(folder.path)
 
 		val children = mega.getChildren(parentNode)
-		children.map { child ->
+		val oneHourAgo = System.currentTimeMillis() - 3600_000L
+		val visibleChildren = ArrayList<Node>(children.size)
+
+		for (child in children) {
+			if (child.name.contains(".cryptomator_tmp_")) {
+				val timeMs = child.timestamp.toEpochMilliseconds()
+				if (timeMs > 0 && timeMs < oneHourAgo) {
+					CoroutineScope(Dispatchers.IO).launch {
+						try {
+							mega.delete(child, true)
+						} catch (ignored: Exception) {}
+					}
+				}
+			} else {
+				visibleChildren.add(child)
+			}
+		}
+
+		if (folder.path == "/" || folder.path.count { it == '/' } <= 2) {
+			CoroutineScope(Dispatchers.IO).launch {
+				try {
+					for (child in visibleChildren) {
+						if (child.isFolder) {
+							val subChildren = mega.getChildren(child)
+							val subFolderPath = if (folder.path == "/") "/${child.name}" else "${folder.path}/${child.name}"
+							for (subChild in subChildren) {
+								if (!subChild.name.contains(".cryptomator_tmp_")) {
+									val subChildPath = "$subFolderPath/${subChild.name}"
+									pathToHashCache[subChildPath] = subChild.hash
+								}
+							}
+						}
+					}
+				} catch (ignored: Exception) {}
+			}
+		}
+
+		visibleChildren.map { child ->
 			val childPath = if (folder.path == "/") "/${child.name}" else "${folder.path}/${child.name}"
 			pathToHashCache[childPath] = child.hash
 			if (child.isFolder) {
@@ -334,34 +402,128 @@ class MegaCloudContentRepository(
 			findNodeByPath(file.path)
 		} ?: throw NoSuchCloudFileException(file.path)
 
+		val fileSize = file.size ?: node.size
+		val dir = cacheDir
+		val cachedFile = if (dir != null && node.hash.isNotEmpty() && fileSize in 1..MAX_CACHE_FILE_SIZE) {
+			File(dir, "${node.hash}_$fileSize")
+		} else null
+
+		if (cachedFile != null && cachedFile.exists() && cachedFile.length() == fileSize) {
+			progressAware.onProgress(Progress.started(DownloadState.download(file)))
+			cachedFile.inputStream().buffered().use { input ->
+				val buffer = ByteArray(8192)
+				var bytesRead: Int
+				var transferred = 0L
+				while (input.read(buffer).also { bytesRead = it } != -1) {
+					if (Thread.currentThread().isInterrupted) {
+						throw CancellationException()
+					}
+					data.write(buffer, 0, bytesRead)
+					transferred += bytesRead
+					progressAware.onProgress(
+						Progress.progress(DownloadState.download(file))
+							.between(0L)
+							.and(fileSize)
+							.withValue(transferred)
+					)
+				}
+			}
+			try {
+				data.flush()
+			} catch (ignored: Exception) {}
+			cachedFile.setLastModified(System.currentTimeMillis())
+			progressAware.onProgress(Progress.completed(DownloadState.download(file)))
+			return@handleExceptions
+		}
+
 		val cancellationToken = CancellationToken()
 		progressAware.onProgress(Progress.started(DownloadState.download(file)))
 
+		val tempCacheFile = if (cachedFile != null && dir != null) {
+			File(dir, "${node.hash}_${fileSize}.tmp")
+		} else null
+
 		try {
-			val sink = data.asSink().buffered()
-			runBlocking {
-				mega.downloadFile(
-					node,
-					sink,
-					cancellationToken,
-					onProgress = { transferred, total ->
-						if (Thread.currentThread().isInterrupted) {
-							cancellationToken.cancel()
-						}
-						progressAware.onProgress(
-							Progress.progress(DownloadState.download(file))
-								.between(0L)
-								.and(total)
-								.withValue(transferred)
-						)
+			if (tempCacheFile != null) {
+				val fileOut = tempCacheFile.outputStream()
+				val teeOut = object : OutputStream() {
+					override fun write(b: Int) {
+						data.write(b)
+						fileOut.write(b)
 					}
-				)
+					override fun write(b: ByteArray, off: Int, len: Int) {
+						data.write(b, off, len)
+						fileOut.write(b, off, len)
+					}
+					override fun flush() {
+						data.flush()
+						fileOut.flush()
+					}
+					override fun close() {
+						fileOut.close()
+					}
+				}
+				val sink = teeOut.asSink().buffered()
+				runBlocking {
+					mega.downloadFile(
+						node,
+						sink,
+						cancellationToken,
+						onProgress = { transferred, total ->
+							if (Thread.currentThread().isInterrupted) {
+								cancellationToken.cancel()
+							}
+							progressAware.onProgress(
+								Progress.progress(DownloadState.download(file))
+									.between(0L)
+									.and(total)
+									.withValue(transferred)
+							)
+						}
+					)
+				}
+				try {
+					sink.flush()
+					teeOut.flush()
+					fileOut.close()
+				} catch (ignored: Exception) {}
+
+				if (tempCacheFile.length() == fileSize) {
+					if (cachedFile != null && tempCacheFile.renameTo(cachedFile)) {
+						pruneCacheIfNecessary()
+					} else {
+						tempCacheFile.delete()
+					}
+				} else {
+					tempCacheFile.delete()
+				}
+			} else {
+				val sink = data.asSink().buffered()
+				runBlocking {
+					mega.downloadFile(
+						node,
+						sink,
+						cancellationToken,
+						onProgress = { transferred, total ->
+							if (Thread.currentThread().isInterrupted) {
+								cancellationToken.cancel()
+							}
+							progressAware.onProgress(
+								Progress.progress(DownloadState.download(file))
+									.between(0L)
+									.and(total)
+									.withValue(transferred)
+							)
+						}
+					)
+				}
 			}
 			try {
 				data.flush()
 			} catch (ignored: Exception) {}
 			progressAware.onProgress(Progress.completed(DownloadState.download(file)))
 		} catch (e: Exception) {
+			tempCacheFile?.delete()
 			if (cancellationToken.isCancellationRequested()) {
 				throw CancellationException(e)
 			}
@@ -437,6 +599,9 @@ class MegaCloudContentRepository(
 				} catch (ignored: Exception) {}
 				mega.rename(uploadedNode, file.name)
 			}
+			if (existing.hash.isNotEmpty()) {
+				cacheDir?.listFiles { _, name -> name.startsWith(existing.hash) }?.forEach { it.delete() }
+			}
 		}
 
 		pathToHashCache[file.path] = uploadedNode.hash
@@ -459,6 +624,9 @@ class MegaCloudContentRepository(
 			mega.delete(targetNode, true)
 		}
 		pathToHashCache.remove(node.path)
+		if (targetNode.hash.isNotEmpty()) {
+			cacheDir?.listFiles { _, name -> name.startsWith(targetNode.hash) }?.forEach { it.delete() }
+		}
 	}
 
 	override fun checkAuthenticationAndRetrieveCurrentAccount(cloud: MegaCloud): String {
@@ -480,6 +648,14 @@ class MegaCloudContentRepository(
 			} catch (ignored: Exception) {}
 		}
 		pathToHashCache.clear()
+		try {
+			cacheDir?.deleteRecursively()
+		} catch (ignored: Exception) {}
 		MegaClientManager.clear(cloud)
+	}
+
+	companion object {
+		private const val MAX_CACHE_FILE_SIZE = 50L * 1024 * 1024 // 50 MB
+		private const val MAX_TOTAL_CACHE_SIZE = 150L * 1024 * 1024 // 150 MB
 	}
 }

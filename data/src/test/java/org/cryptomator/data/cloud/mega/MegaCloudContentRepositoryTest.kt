@@ -31,6 +31,8 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.InputStream
 import java.net.UnknownHostException
 
@@ -346,5 +348,129 @@ class MegaCloudContentRepositoryTest {
 
 		val result = repository.checkAuthenticationAndRetrieveCurrentAccount(cloud)
 		assertEquals("alice@example.com", result)
+	}
+
+	@Test
+	fun testListFiltersOutCryptomatorTmpFilesAndTriggersDeleteForStale() = runBlocking {
+		val tmpFileNode = Node().apply {
+			hash = "stale_tmp_hash"
+			name = "vault.cryptomator_tmp_1234abcd"
+			nodeType = NodeType.FILE
+			size = 100L
+			timestamp = Instant.fromEpochMilliseconds(System.currentTimeMillis() - 7200_000L) // 2 hours old
+		}
+		whenever(mega.getNodeByHash("f1_hash")).thenReturn(folder1Node)
+		whenever(mega.getChildren(folder1Node)).thenReturn(listOf(folder2Node, tmpFileNode))
+
+		val parent = MegaFolder(hash = "f1_hash", name = "vault", path = "/vault", parent = repository.root(cloud), cloud = cloud)
+		val children = repository.list(parent)
+
+		// tmp file must be excluded from visible listing
+		assertEquals(1, children.size)
+		assertEquals("d", children.first().name)
+	}
+
+	@Test
+	fun testReadCachesFileAndServesFromCacheOnSecondRead() = runBlocking {
+		val tempCacheDir = File(System.getProperty("java.io.tmpdir"), "mega_test_cache_${System.currentTimeMillis()}").apply { mkdirs() }
+		try {
+			whenever(context.cacheDir).thenReturn(tempCacheDir)
+
+			val testCachedNode = Node().apply {
+				hash = "cached_file_hash"
+				name = "doc.txt"
+				nodeType = NodeType.FILE
+				size = 12L
+				timestamp = Instant.fromEpochMilliseconds(1700000000000L)
+			}
+			whenever(mega.getNodeByHash("cached_file_hash")).thenReturn(testCachedNode)
+			whenever(mega.downloadFile(eq(testCachedNode), any(), any(), any())).thenAnswer { invocation ->
+				val sink = invocation.getArgument<kotlinx.io.Sink>(1)
+				val bytes = "hello cached".toByteArray()
+				sink.write(bytes)
+				sink.flush()
+				null
+			}
+
+			val targetFile = MegaFile(
+				hash = "cached_file_hash",
+				name = "doc.txt",
+				path = "/doc.txt",
+				parent = repository.root(cloud),
+				cloud = cloud,
+				size = 12L
+			)
+
+			// First read: downloads from mega and populates cache
+			val out1 = ByteArrayOutputStream()
+			repository.read(targetFile, out1, ProgressAware.NO_OP_PROGRESS_AWARE_DOWNLOAD)
+			assertEquals("hello cached", out1.toString())
+			verify(mega, times(1)).downloadFile(eq(testCachedNode), any(), any(), any())
+
+			// Second read: should hit local disk cache, mega.downloadFile is NOT called again
+			val out2 = ByteArrayOutputStream()
+			repository.read(targetFile, out2, ProgressAware.NO_OP_PROGRESS_AWARE_DOWNLOAD)
+			assertEquals("hello cached", out2.toString())
+			verify(mega, times(1)).downloadFile(eq(testCachedNode), any(), any(), any())
+		} finally {
+			tempCacheDir.deleteRecursively()
+		}
+	}
+
+	@Test
+	fun testDeleteRemovesMatchingCachedFiles() = runBlocking {
+		val tempCacheDir = File(System.getProperty("java.io.tmpdir"), "mega_test_cache_del_${System.currentTimeMillis()}").apply { mkdirs() }
+		try {
+			whenever(context.cacheDir).thenReturn(tempCacheDir)
+			val megaCacheFolder = File(tempCacheDir, "mega_cache").apply { mkdirs() }
+			val cacheFile = File(megaCacheFolder, "cached_file_hash_12")
+			cacheFile.writeText("hello cached")
+			assertTrue(cacheFile.exists())
+
+			val targetNode = Node().apply {
+				hash = "cached_file_hash"
+				name = "doc.txt"
+				nodeType = NodeType.FILE
+			}
+			whenever(mega.getNodeByHash("cached_file_hash")).thenReturn(targetNode)
+
+			val targetFile = MegaFile(
+				hash = "cached_file_hash",
+				name = "doc.txt",
+				path = "/doc.txt",
+				parent = repository.root(cloud),
+				cloud = cloud
+			)
+
+			repository.delete(targetFile)
+			verify(mega).delete(targetNode, true)
+			assertFalse(cacheFile.exists())
+		} finally {
+			tempCacheDir.deleteRecursively()
+		}
+	}
+
+	@Test
+	fun testMegaExceptionOverQuotaWithWaitTime() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer {
+			throw dev.carlsen.mega.model.MegaException("Bandwidth limit reached. Try again in 3600 seconds.", null, -17)
+		}
+		val ex = assertThrows(FatalBackendException::class.java) {
+			repository.list(root)
+		}
+		assertTrue(ex.message?.contains("retry in 3600 seconds") == true)
+	}
+
+	@Test
+	fun testMegaExceptionOverQuotaDefaultResetHint() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer {
+			throw dev.carlsen.mega.model.MegaException("Over quota", null, -17)
+		}
+		val ex = assertThrows(FatalBackendException::class.java) {
+			repository.list(root)
+		}
+		assertTrue(ex.message?.contains("resets in ~4–6 hours") == true)
 	}
 }
