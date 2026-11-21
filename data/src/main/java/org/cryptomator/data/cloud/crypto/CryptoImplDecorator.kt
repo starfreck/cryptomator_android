@@ -1,6 +1,7 @@
 package org.cryptomator.data.cloud.crypto
 
 import android.content.Context
+import timber.log.Timber
 import org.cryptomator.cryptolib.api.Cryptor
 import org.cryptomator.cryptolib.common.DecryptingReadableByteChannel
 import org.cryptomator.cryptolib.common.EncryptingWritableByteChannel
@@ -327,15 +328,20 @@ abstract class CryptoImplDecorator(
 
 	private fun isStreamingEnabled(): Boolean {
 		return try {
-			SharedPreferencesHandler(context).pipelinedStreaming()
-		} catch (_: Exception) {
+			val enabled = SharedPreferencesHandler(context).pipelinedStreaming()
+			Timber.tag("CryptomatorStream").i("isStreamingEnabled: prefs returned $enabled")
+			enabled
+		} catch (e: Throwable) {
+			Timber.tag("CryptomatorStream").w(e, "isStreamingEnabled error: %s", e.message)
 			true
 		}
 	}
 
 	@Throws(BackendException::class)
 	fun read(cryptoFile: CryptoFile, data: OutputStream, progressAware: ProgressAware<DownloadState>) {
-		if (isStreamingEnabled()) {
+		val streaming = isStreamingEnabled()
+		Timber.tag("CryptomatorStream").i("CryptoImplDecorator.read: %s, size=%s, streamingEnabled=%s", cryptoFile.name, cryptoFile.size, streaming)
+		if (streaming) {
 			streamingFileReader.read(cryptoFile, data, progressAware)
 		} else {
 			readLegacy(cryptoFile, data, progressAware)

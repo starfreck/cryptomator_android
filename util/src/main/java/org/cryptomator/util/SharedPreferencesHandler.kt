@@ -240,7 +240,7 @@ constructor(context: Context) : SharedPreferences.OnSharedPreferenceChangeListen
 	}
 
 	fun pipelinedStreaming(): Boolean {
-		return defaultSharedPreferences.getValue(PIPELINED_STREAMING, true)
+		return defaultSharedPreferences.getBoolean(PIPELINED_STREAMING, true)
 	}
 
 	fun purchaseRevokedReason(): String {

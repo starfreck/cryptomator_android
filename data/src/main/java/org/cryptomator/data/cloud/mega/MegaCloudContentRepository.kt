@@ -1,7 +1,9 @@
 package org.cryptomator.data.cloud.mega
 
 import android.content.Context
+import android.util.Log
 import dev.carlsen.mega.Mega
+import timber.log.Timber
 import dev.carlsen.mega.model.Node
 import dev.carlsen.mega.util.CancellationToken
 import kotlinx.coroutines.CoroutineScope
@@ -422,12 +424,14 @@ class MegaCloudContentRepository(
 		} ?: throw NoSuchCloudFileException(file.path)
 
 		val fileSize = file.size ?: node.size
+		Timber.tag("CryptomatorStream").i("MegaCloudContentRepository.read: %s, node=%s, size=%s", file.name, node.name, fileSize)
 		val dir = cacheDir
 		val cachedFile = if (dir != null && node.hash.isNotEmpty() && fileSize > 0L) {
 			File(dir, "${node.hash}_$fileSize")
 		} else null
 
 		if (cachedFile != null && cachedFile.exists() && cachedFile.length() == fileSize) {
+			Timber.tag("CryptomatorStream").i("MegaCloudContentRepository.read HIT local cache: %s", cachedFile.name)
 			progressAware.onProgress(Progress.started(DownloadState.download(file)))
 			cachedFile.inputStream().buffered().use { input ->
 				val buffer = ByteArray(8192)
@@ -459,6 +463,7 @@ class MegaCloudContentRepository(
 			return@handleExceptions
 		}
 
+		Timber.tag("CryptomatorStream").i("MegaCloudContentRepository.read downloading from MEGA network: %s", node.name)
 		val cancellationToken = CancellationToken()
 		progressAware.onProgress(Progress.started(DownloadState.download(file)))
 
@@ -579,6 +584,9 @@ class MegaCloudContentRepository(
 						}
 					)
 				}
+				try {
+					sink.flush()
+				} catch (ignored: Exception) {}
 			}
 			try {
 				data.flush()

@@ -1050,6 +1050,8 @@ class DocumentContentCache @JvmOverloads constructor(
 	 * @return the modification date of the downloaded version, which can be newer than the one in the cache
 	 */
 	private fun download(path: VaultPath, localFile: File, signal: CancellationSignal?, progressAware: ProgressAware<DownloadState>): Long? {
+		val t0 = System.currentTimeMillis()
+		LOG.i("DocumentContentCache.download START: path=%s", path.path)
 		awaitedDownloads.incrementAndGet()
 		try {
 			val inCloud = metadataCache.readFromCloud(path)
@@ -1058,8 +1060,11 @@ class DocumentContentCache @JvmOverloads constructor(
 				read(path, inCloud(), localFile, progressAware)
 			}
 			try {
-				return transfer.await(signal)
+				val res = transfer.await(signal)
+				LOG.i("DocumentContentCache.download FINISHED: path=%s in %s ms, size=%s", path.path, System.currentTimeMillis() - t0, localFile.length())
+				return res
 			} catch (e: Exception) {
+				LOG.e(e, "DocumentContentCache.download FAILED: path=%s: %s", path.path, e.message)
 				transfer.whenComplete { _, _ -> drop(localFile) }
 				throw e
 			}

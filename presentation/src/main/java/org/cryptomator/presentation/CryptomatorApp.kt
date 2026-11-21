@@ -255,9 +255,7 @@ class CryptomatorApp : Application(), HasComponent<ApplicationComponent> {
 	}
 
 	private fun setupLoggingFramework() {
-		if (BuildConfig.DEBUG) {
-			Timber.plant(DebugLogger())
-		}
+		Timber.plant(DebugLogger())
 		Timber.plant(ReleaseLogger(_applicationContext))
 	}
 

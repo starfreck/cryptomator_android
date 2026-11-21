@@ -375,6 +375,8 @@ class CryptomatorDocumentsProvider : DocumentsProvider() {
 	}
 
 	private fun openDocument(documentId: String, path: VaultPath, accessMode: Int, signal: CancellationSignal?): ParcelFileDescriptor {
+		val t0 = System.currentTimeMillis()
+		LOG.i("DocumentsProvider.openDocument START: id=%s, path=%s, accessMode=%s", documentId, path.path, accessMode)
 		// a mode without write access, e.g. "rt", needs only a grant to read, so it never truncates or writes
 		val writing = (accessMode and ParcelFileDescriptor.MODE_WRITE_ONLY) != 0
 		if (writing) {
@@ -388,6 +390,7 @@ class CryptomatorDocumentsProvider : DocumentsProvider() {
 			if (!writing) {
 				val localFile = pinnedFile ?: whileUnlocked(path.vault, ::authenticationRequired) { contentCache.file(path, signal) }
 				try {
+					LOG.i("DocumentsProvider.openDocument DONE in %s ms for %s, size=%s", System.currentTimeMillis() - t0, path.path, localFile.length())
 					// kept in use until the reader closes the file, so that a writer gets a copy of its own meanwhile, see
 					// DocumentContentCache.fileForWriting. A reader that detached the file descriptor, e.g. for native code,
 					// closes it unnoticed, so its copy stays in use until the process ends.
@@ -402,11 +405,14 @@ class CryptomatorDocumentsProvider : DocumentsProvider() {
 				}
 			}
 			try {
-				return whileUnlocked(path.vault, ::authenticationRequired) { openForWriting(documentId, path, accessMode, signal, pinnedFile) }
+				val pfd = whileUnlocked(path.vault, ::authenticationRequired) { openForWriting(documentId, path, accessMode, signal, pinnedFile) }
+				LOG.i("DocumentsProvider.openDocument (write) DONE in %s ms for %s", System.currentTimeMillis() - t0, path.path)
+				return pfd
 			} finally {
 				pinnedFile?.let(contentCache::release)
 			}
 		} catch (e: Exception) {
+			LOG.e(e, "DocumentsProvider.openDocument FAILED for %s: %s", path.path, e.message)
 			if (e is FileNotFoundException || (e is RuntimeException && e !is FatalBackendException)) {
 				throw e
 			}
