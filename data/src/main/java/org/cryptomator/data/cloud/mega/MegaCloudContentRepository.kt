@@ -61,6 +61,15 @@ class MegaCloudContentRepository(
 			null
 		}
 
+	init {
+		try {
+			context.cacheDir?.let {
+				File(it, "mega_cache").deleteRecursively()
+				File(it, "mega_cache_v2").deleteRecursively()
+			}
+		} catch (ignored: Exception) {}
+	}
+
 	private fun shouldCache(dir: File, fileSize: Long): Boolean {
 		if (fileSize <= 0L || fileSize > MAX_SINGLE_FILE_CACHE_BYTES) return false
 		val usable = dir.usableSpace
@@ -756,7 +765,7 @@ class MegaCloudContentRepository(
 	}
 
 	companion object {
-		private const val MAX_SINGLE_FILE_CACHE_BYTES = 2L * 1024 * 1024 * 1024 // 2 GB
+		private const val MAX_SINGLE_FILE_CACHE_BYTES = 50L * 1024 * 1024 // 50 MB
 		private const val STORAGE_SAFETY_FLOOR_BYTES = 2L * 1024 * 1024 * 1024 // 2 GB minimum free disk space
 		private const val FREE_SPACE_CACHE_PERCENTAGE = 0.10 // Up to 10% of free storage
 		private const val MIN_DYNAMIC_CACHE_BYTES = 150L * 1024 * 1024 // At least 150 MB if above safety floor

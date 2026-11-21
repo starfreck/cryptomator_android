@@ -37,17 +37,18 @@ class StreamingMediaProxyCallback(
 
 		val targetOffset = minOf(offset + size, expectedSize)
 		val startTime = System.currentTimeMillis()
-		val timeoutMs = 60_000L
+		// FUSE kernel driver has a strict ~5s timeout. Wait at most 3.5s per read.
+		val timeoutMs = 3500L
 
 		synchronized(lock) {
 			while (file.length() < targetOffset && !isCompleted() && errorProvider() == null) {
 				val elapsed = System.currentTimeMillis() - startTime
 				if (elapsed >= timeoutMs) {
-					Timber.tag("CryptomatorStream").e(
-						"ProxyCallback.onRead timeout at offset %s (size=%s, disk=%s, expected=%s)",
+					Timber.tag("CryptomatorStream").w(
+						"ProxyCallback.onRead not yet available at offset %s (size=%s, disk=%s, expected=%s)",
 						offset, size, file.length(), expectedSize
 					)
-					throw ErrnoException("onRead timeout", OsConstants.ETIMEDOUT)
+					throw ErrnoException("read past available", OsConstants.EAGAIN)
 				}
 				try {
 					lock.wait(minOf(timeoutMs - elapsed, 100L))
