@@ -94,9 +94,26 @@ class CloudConnectionListPresenter @Inject constructor( //
 			getUsernameUseCase.withCloud(cloud).run(object : DefaultResultHandler<String>() {
 				override fun onSuccess(updatedUsername: String) {
 					if (updatedUsername != cloud.username()) {
-						saveCloud(org.cryptomator.domain.MegaCloud.aCopyOf(cloud).withUsername(updatedUsername).build())
+						val updatedCloud = org.cryptomator.domain.MegaCloud.aCopyOf(cloud).withUsername(updatedUsername).build()
+						addOrChangeCloudConnectionUseCase
+							.withCloud(updatedCloud)
+							.run(object : DefaultResultHandler<Void?>() {
+								override fun onSuccess(void: Void?) {
+									getCloudsUseCase
+										.withCloudType(CloudTypeModel.valueOf(selectedCloudType.get()))
+										.run(object : DefaultResultHandler<List<Cloud>>() {
+											override fun onSuccess(clouds: List<Cloud>) {
+												val cloudModels = clouds.map { c -> cloudModelMapper.toModel(c) }
+												view?.showCloudModels(cloudModels.filter { includeWebDavProviderClouds || it.cloudType() == selectedCloudType.get() })
+											}
+											override fun onError(e: Throwable) {}
+										})
+								}
+								override fun onError(e: Throwable) {}
+							})
 					}
 				}
+				override fun onError(e: Throwable) {}
 			})
 		}
 	}
@@ -242,7 +259,7 @@ class CloudConnectionListPresenter @Inject constructor( //
 					.build()
 				activity().runOnUiThread {
 					view?.showProgress(ProgressModel.COMPLETED)
-					saveCloud(megaCloud)
+					prepareForSavingMegaCloud(megaCloud)
 				}
 			} catch (e: Throwable) {
 				activity().runOnUiThread {
@@ -256,6 +273,26 @@ class CloudConnectionListPresenter @Inject constructor( //
 				}
 			}
 		}
+	}
+
+	fun prepareForSavingMegaCloud(cloud: org.cryptomator.domain.MegaCloud) {
+		getCloudsUseCase
+			.withCloudType(CloudTypeModel.valueOf(selectedCloudType.get()))
+			.run(object : DefaultResultHandler<List<Cloud>>() {
+				override fun onSuccess(clouds: List<Cloud>) {
+					clouds.filterIsInstance<org.cryptomator.domain.MegaCloud>().firstOrNull {
+						it.configurationMatches(cloud)
+					}?.let {
+						saveCloud(
+							org.cryptomator.domain.MegaCloud.aCopyOf(it)
+								.withUsername(cloud.username())
+								.withAccessToken(cloud.accessToken())
+								.build()
+						)
+						Timber.tag("CloudConnListPresenter").i("MEGA credentials updated")
+					} ?: saveCloud(cloud)
+				}
+			})
 	}
 
 	internal fun loadSharepointDrives(sharepointSkeleton: SharepointCloud) {

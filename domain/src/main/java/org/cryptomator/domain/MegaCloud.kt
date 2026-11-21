@@ -22,10 +22,24 @@ class MegaCloud private constructor(builder: Builder) : Cloud {
 	fun username(): String? = username
 
 	override fun type(): CloudType = CloudType.MEGA
-	override fun configurationMatches(cloud: Cloud?): Boolean = cloud is MegaCloud && cloud.username == this.username
+	fun accountEmail(): String = (username ?: "").substringBefore(" (").trim().lowercase()
+	override fun configurationMatches(cloud: Cloud?): Boolean =
+		cloud is MegaCloud && cloud.accountEmail() == this.accountEmail() && this.accountEmail().isNotEmpty()
 	override fun persistent(): Boolean = true
 	override fun requiresNetwork(): Boolean = true
 	override fun isReadOnly(): Boolean = false
+
+	override fun equals(other: Any?): Boolean {
+		if (this === other) return true
+		if (other !is MegaCloud) return false
+		return if (id != null && other.id != null) {
+			id == other.id
+		} else {
+			accountEmail().isNotEmpty() && accountEmail() == other.accountEmail()
+		}
+	}
+
+	override fun hashCode(): Int = id?.hashCode() ?: accountEmail().hashCode()
 
 	override fun toString(): String = "MEGA"
 

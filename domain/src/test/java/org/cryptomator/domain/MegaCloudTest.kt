@@ -51,7 +51,7 @@ class MegaCloudTest {
 
 		val cloud2 = MegaCloud.aMegaCloud()
 			.withId(2L)
-			.withUsername("alice@example.com")
+			.withUsername("alice@example.com (5.0 GB / 20.0 GB)")
 			.withAccessToken("sess2")
 			.build()
 
@@ -63,5 +63,10 @@ class MegaCloudTest {
 
 		assertTrue(cloud1.configurationMatches(cloud2))
 		assertEquals(false, cloud1.configurationMatches(cloudOther))
+		assertEquals("alice@example.com", cloud2.accountEmail())
+		assertEquals(false, cloud1 == cloud2)
+		val cloud1Copy = MegaCloud.aCopyOf(cloud1).build()
+		assertEquals(true, cloud1 == cloud1Copy)
+		assertEquals(cloud1.hashCode(), cloud1Copy.hashCode())
 	}
 }

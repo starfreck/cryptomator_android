@@ -462,14 +462,14 @@ class MegaCloudContentRepository(
 	}
 
 	override fun checkAuthenticationAndRetrieveCurrentAccount(cloud: MegaCloud): String {
-		val username = cloud.username() ?: "MEGA User"
+		val baseEmail = (cloud.username() ?: "MEGA User").substringBefore(" (")
 		return try {
 			val quota = runBlocking { mega.getQuota() }
 			val usedGb = quota.spaceUsedBytes.toLong().toDouble() / (1024.0 * 1024.0 * 1024.0)
 			val totalGb = quota.spaceCapacityBytes.toLong().toDouble() / (1024.0 * 1024.0 * 1024.0)
-			"$username (%.1f GB / %.1f GB)".format(Locale.US, usedGb, totalGb)
+			"$baseEmail (%.1f GB / %.1f GB)".format(Locale.US, usedGb, totalGb)
 		} catch (e: Exception) {
-			username
+			cloud.username() ?: "MEGA User"
 		}
 	}
 

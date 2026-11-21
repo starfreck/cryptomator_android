@@ -394,6 +394,25 @@ class AuthenticateCloudPresenter @Inject constructor( //
 			})
 	}
 
+	fun prepareForSavingMegaCloud(cloud: MegaCloud) {
+		getCloudsUseCase
+			.withCloudType(cloud.type())
+			.run(object : DefaultResultHandler<List<Cloud>>() {
+				override fun onSuccess(clouds: List<Cloud>) {
+					clouds.filterIsInstance<MegaCloud>().firstOrNull {
+						it.configurationMatches(cloud)
+					}?.let {
+						succeedAuthenticationWith(
+							MegaCloud.aCopyOf(it)
+								.withUsername(cloud.username())
+								.withAccessToken(cloud.accessToken())
+								.build()
+						)
+					} ?: succeedAuthenticationWith(cloud)
+				}
+			})
+	}
+
 	private inner class BoxAuthStrategy : AuthStrategy {
 
 		private var authenticationStarted = false
@@ -590,7 +609,7 @@ class AuthenticateCloudPresenter @Inject constructor( //
 				}
 				activity().runOnUiThread {
 					view?.showProgress(ProgressModel.COMPLETED)
-					succeedAuthenticationWith(updatedCloud)
+					prepareForSavingMegaCloud(updatedCloud)
 				}
 			} catch (e: Throwable) {
 				activity().runOnUiThread {
