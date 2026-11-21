@@ -282,6 +282,33 @@ class MegaCloudContentRepositoryTest {
 	}
 
 	@Test
+	fun testMegaExceptionNotFoundMapping() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw dev.carlsen.mega.model.MegaException("Not found", null, -9) }
+		assertThrows(NoSuchCloudFileException::class.java) {
+			repository.list(root)
+		}
+	}
+
+	@Test
+	fun testMegaExceptionSessionExpiredMapping() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw dev.carlsen.mega.model.MegaException("Session expired", null, -15) }
+		assertThrows(org.cryptomator.domain.exception.authentication.WrongCredentialsException::class.java) {
+			repository.list(root)
+		}
+	}
+
+	@Test
+	fun testMegaExceptionRateLimitedMapping() {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw dev.carlsen.mega.model.MegaException("Rate limited", null, -4) }
+		assertThrows(NetworkConnectionException::class.java) {
+			repository.list(root)
+		}
+	}
+
+	@Test
 	fun testNetworkExceptionMapping() {
 		val root = repository.root(cloud)
 		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw UnknownHostException("api.mega.co.nz") }

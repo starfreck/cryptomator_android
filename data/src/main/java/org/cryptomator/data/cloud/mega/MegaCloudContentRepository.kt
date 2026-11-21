@@ -62,6 +62,19 @@ class MegaCloudContentRepository(
 			throw NetworkConnectionException(e)
 		} catch (e: SSLException) {
 			throw NetworkConnectionException(e)
+		} catch (e: dev.carlsen.mega.model.MegaException) {
+			when (e.code) {
+				-9 -> throw NoSuchCloudFileException(e.message ?: "Resource not found")
+				-11, -15, -16 -> throw WrongCredentialsException(cloud)
+				-3, -4, -18 -> throw NetworkConnectionException(e)
+				else -> {
+					val msg = e.message ?: ""
+					if (msg.contains("401") || msg.contains("403") || msg.contains("Session expired", ignoreCase = true)) {
+						throw WrongCredentialsException(cloud)
+					}
+					throw FatalBackendException(e)
+				}
+			}
 		} catch (e: Exception) {
 			val msg = e.message ?: ""
 			if (msg.contains("401") || msg.contains("403") || msg.contains("Session expired", ignoreCase = true)) {

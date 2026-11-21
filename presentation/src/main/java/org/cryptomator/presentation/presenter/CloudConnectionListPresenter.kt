@@ -91,15 +91,13 @@ class CloudConnectionListPresenter @Inject constructor( //
 
 	private fun refreshMegaQuotas(megaClouds: List<org.cryptomator.domain.MegaCloud>) {
 		for (cloud in megaClouds) {
-			if (cloud.username()?.contains("(") != true) {
-				getUsernameUseCase.withCloud(cloud).run(object : DefaultResultHandler<String>() {
-					override fun onSuccess(updatedUsername: String) {
-						if (updatedUsername != cloud.username()) {
-							saveCloud(org.cryptomator.domain.MegaCloud.aCopyOf(cloud).withUsername(updatedUsername).build())
-						}
+			getUsernameUseCase.withCloud(cloud).run(object : DefaultResultHandler<String>() {
+				override fun onSuccess(updatedUsername: String) {
+					if (updatedUsername != cloud.username()) {
+						saveCloud(org.cryptomator.domain.MegaCloud.aCopyOf(cloud).withUsername(updatedUsername).build())
 					}
-				})
-			}
+				}
+			})
 		}
 	}
 
