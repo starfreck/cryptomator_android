@@ -5,11 +5,9 @@ import dev.carlsen.mega.Mega
 import dev.carlsen.mega.model.Node
 import dev.carlsen.mega.util.CancellationToken
 import kotlinx.coroutines.runBlocking
-import kotlinx.io.Buffer
 import kotlinx.io.asSink
+import kotlinx.io.asSource
 import kotlinx.io.buffered
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 import org.cryptomator.domain.MegaCloud
 import org.cryptomator.domain.exception.BackendException
 import org.cryptomator.domain.exception.CancellationException
@@ -25,7 +23,6 @@ import org.cryptomator.domain.usecases.cloud.DownloadState
 import org.cryptomator.domain.usecases.cloud.Progress
 import org.cryptomator.domain.usecases.cloud.UploadState
 import java.io.File
-import java.io.FileOutputStream
 import java.io.OutputStream
 import java.net.SocketException
 import java.net.SocketTimeoutException
@@ -41,10 +38,6 @@ class MegaCloudContentRepository(
 	private val mega: Mega,
 	private val context: Context
 ) : CloudContentRepository<MegaCloud, MegaNode, MegaFolder, MegaFile> {
-
-	companion object {
-		private const val MAX_IN_MEMORY_UPLOAD_BYTES = 512 * 1024L // 512 KB
-	}
 
 	private val pathToHashCache = Collections.synchronizedMap(
 		object : LinkedHashMap<String, String>(128, 0.75f, true) {
@@ -99,7 +92,8 @@ class MegaCloudContentRepository(
 
 		pathToHashCache[normalized]?.let { cachedHash ->
 			val node = mega.getNodeByHash(cachedHash)
-			if (node != null) return node
+			val expectedName = normalized.substringAfterLast('/')
+			if (node != null && node.name == expectedName) return node
 			pathToHashCache.remove(normalized)
 		}
 
@@ -381,29 +375,25 @@ class MegaCloudContentRepository(
 		val targetParentNode = parentNode ?: throw FatalBackendException("Parent folder does not exist: ${parentFolder.path}")
 
 		val existing = mega.getChildren(targetParentNode).firstOrNull { it.name == file.name }
-		if (existing != null) {
-			if (!replace) throw CloudNodeAlreadyExistsException(file.path)
-			delete(file.copy(hash = existing.hash))
+		if (existing != null && !replace) {
+			throw CloudNodeAlreadyExistsException(file.path)
 		}
 
 		val cancellationToken = CancellationToken()
 		progressAware.onProgress(Progress.started(UploadState.upload(file)))
 
-		val isSmallFile = size in 0..MAX_IN_MEMORY_UPLOAD_BYTES
+		val uploadName = if (existing != null) "${file.name}.cryptomator_tmp_${java.util.UUID.randomUUID().toString().take(8)}" else file.name
 		val inputStream = data.open(context) ?: throw FatalBackendException("Cannot open data stream")
 
-		val uploadedNode: Node = if (isSmallFile) {
-			// In-memory RAM streaming for metadata, keys, directory tokens (< 512 KB)
-			val bytes = inputStream.use { it.readBytes() }
-			val buffer = Buffer()
-			buffer.write(bytes)
-			try {
+		val uploadedNode: Node = try {
+			inputStream.use { input ->
+				val source = input.asSource().buffered()
 				runBlocking {
 					mega.uploadFile(
 						destNode = targetParentNode,
-						name = file.name,
-						fileSize = bytes.size.toLong(),
-						fileInputSource = buffer,
+						name = uploadName,
+						fileSize = if (size >= 0L) size else 0L,
+						fileInputSource = source,
 						cancellationToken = cancellationToken,
 						onProgress = { transferred, total ->
 							if (Thread.currentThread().isInterrupted) {
@@ -418,51 +408,20 @@ class MegaCloudContentRepository(
 						}
 					)
 				}
-			} catch (e: Exception) {
-				if (cancellationToken.isCancellationRequested()) {
-					throw CancellationException(e)
-				}
-				throw e
 			}
-		} else {
-			// Disk-buffered fallback for large media files to prevent OOM
-			val tempFile = File.createTempFile("mega_up_", ".tmp", context.cacheDir)
-			try {
-				inputStream.use { input ->
-					FileOutputStream(tempFile).use { output ->
-						input.copyTo(output)
-					}
-				}
-				val source = SystemFileSystem.source(Path(tempFile.absolutePath)).buffered()
-				source.use { bufferedSource ->
-					runBlocking {
-						mega.uploadFile(
-							destNode = targetParentNode,
-							name = file.name,
-							fileSize = tempFile.length(),
-							fileInputSource = bufferedSource,
-							cancellationToken = cancellationToken,
-							onProgress = { transferred, total ->
-								if (Thread.currentThread().isInterrupted) {
-									cancellationToken.cancel()
-								}
-								progressAware.onProgress(
-									Progress.progress(UploadState.upload(file))
-										.between(0L)
-										.and(total)
-										.withValue(transferred)
-								)
-							}
-						)
-					}
-				}
-			} catch (e: Exception) {
-				if (cancellationToken.isCancellationRequested()) {
-					throw CancellationException(e)
-				}
-				throw e
-			} finally {
-				tempFile.delete()
+		} catch (e: Exception) {
+			if (cancellationToken.isCancellationRequested()) {
+				throw CancellationException(e)
+			}
+			throw e
+		}
+
+		if (existing != null) {
+			runBlocking {
+				try {
+					mega.delete(existing, true)
+				} catch (ignored: Exception) {}
+				mega.rename(uploadedNode, file.name)
 			}
 		}
 

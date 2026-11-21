@@ -595,7 +595,12 @@ class AuthenticateCloudPresenter @Inject constructor( //
 			} catch (e: Throwable) {
 				activity().runOnUiThread {
 					view?.showProgress(ProgressModel.COMPLETED)
-					showError(e)
+					val msg = e.message ?: ""
+					if (msg.contains("2FA", ignoreCase = true) || msg.contains("two factor", ignoreCase = true) || msg.contains("verification code", ignoreCase = true) || msg.contains("-26")) {
+						showError(Throwable("Two-factor authentication code required. Please enter your 6-digit 2FA code."))
+					} else {
+						showError(e)
+					}
 					failAuthentication(R.string.cloud_names_mega)
 				}
 			}

@@ -230,6 +230,58 @@ class MegaCloudContentRepositoryTest {
 	}
 
 	@Test
+	fun testWriteSuccessNewFile() = runBlocking {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(emptyList())
+
+		val uploadedNode = Node().apply {
+			hash = "uploaded_hash"
+			name = "file.txt"
+			nodeType = NodeType.FILE
+			size = 100L
+			timestamp = Instant.fromEpochMilliseconds(1700000000000L)
+		}
+		whenever(mega.uploadFile(eq(rootNode), eq("file.txt"), eq(100L), any(), any(), any()))
+			.thenReturn(uploadedNode)
+
+		val targetFile = MegaFile(hash = "", name = "file.txt", path = "/file.txt", parent = root, cloud = cloud)
+		val dataSource = mock<DataSource>()
+		whenever(dataSource.open(context)).thenReturn(ByteArrayInputStream("content".toByteArray()))
+
+		val result = repository.write(targetFile, dataSource, ProgressAware.NO_OP_PROGRESS_AWARE_UPLOAD, replace = false, size = 100L)
+		assertEquals("uploaded_hash", result.hash)
+		assertEquals(100L, result.size)
+		verify(mega, never()).delete(any(), any())
+	}
+
+	@Test
+	fun testWriteAtomicReplaceExistingFile() = runBlocking {
+		val root = repository.root(cloud)
+		whenever(mega.getNodeByHash("root_hash")).thenReturn(rootNode)
+		whenever(mega.getChildren(rootNode)).thenReturn(listOf(fileNode))
+
+		val uploadedNode = Node().apply {
+			hash = "new_uploaded_hash"
+			name = "temp_name"
+			nodeType = NodeType.FILE
+			size = 200L
+			timestamp = Instant.fromEpochMilliseconds(1700000000000L)
+		}
+		whenever(mega.uploadFile(eq(rootNode), any(), eq(200L), any(), any(), any()))
+			.thenReturn(uploadedNode)
+
+		val targetFile = MegaFile(hash = "", name = "masterkey.cryptomator", path = "/masterkey.cryptomator", parent = root, cloud = cloud)
+		val dataSource = mock<DataSource>()
+		whenever(dataSource.open(context)).thenReturn(ByteArrayInputStream("new_content".toByteArray()))
+
+		val result = repository.write(targetFile, dataSource, ProgressAware.NO_OP_PROGRESS_AWARE_UPLOAD, replace = true, size = 200L)
+		assertEquals("new_uploaded_hash", result.hash)
+		verify(mega).delete(fileNode, true)
+		verify(mega).rename(uploadedNode, "masterkey.cryptomator")
+	}
+
+	@Test
 	fun testNetworkExceptionMapping() {
 		val root = repository.root(cloud)
 		whenever(mega.getNodeByHash("root_hash")).thenAnswer { throw UnknownHostException("api.mega.co.nz") }
