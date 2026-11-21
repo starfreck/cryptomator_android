@@ -437,7 +437,11 @@ class MegaCloudContentRepository(
 					if (Thread.currentThread().isInterrupted) {
 						throw CancellationException()
 					}
-					data.write(buffer, 0, bytesRead)
+					try {
+						data.write(buffer, 0, bytesRead)
+					} catch (e: Exception) {
+						throw CancellationException(e)
+					}
 					transferred += bytesRead
 					progressAware.onProgress(
 						Progress.progress(DownloadState.download(file))
@@ -462,24 +466,63 @@ class MegaCloudContentRepository(
 			File(dir, "${node.hash}_${fileSize}.tmp")
 		} else null
 
+		val killableData = object : OutputStream() {
+			override fun write(b: Int) {
+				try {
+					data.write(b)
+				} catch (e: Exception) {
+					cancellationToken.cancel()
+					throw e
+				}
+			}
+			override fun write(b: ByteArray, off: Int, len: Int) {
+				try {
+					data.write(b, off, len)
+				} catch (e: Exception) {
+					cancellationToken.cancel()
+					throw e
+				}
+			}
+			override fun flush() {
+				try {
+					data.flush()
+				} catch (e: Exception) {
+					cancellationToken.cancel()
+					throw e
+				}
+			}
+			override fun close() {
+				try {
+					data.close()
+				} catch (e: Exception) {
+					cancellationToken.cancel()
+					throw e
+				}
+			}
+		}
+
 		try {
 			if (tempCacheFile != null) {
 				val fileOut = tempCacheFile.outputStream()
 				val teeOut = object : OutputStream() {
 					override fun write(b: Int) {
-						data.write(b)
+						killableData.write(b)
 						fileOut.write(b)
 					}
 					override fun write(b: ByteArray, off: Int, len: Int) {
-						data.write(b, off, len)
+						killableData.write(b, off, len)
 						fileOut.write(b, off, len)
 					}
 					override fun flush() {
-						data.flush()
+						killableData.flush()
 						fileOut.flush()
 					}
 					override fun close() {
-						fileOut.close()
+						try {
+							killableData.close()
+						} finally {
+							fileOut.close()
+						}
 					}
 				}
 				val sink = teeOut.asSink().buffered()
@@ -517,7 +560,7 @@ class MegaCloudContentRepository(
 					tempCacheFile.delete()
 				}
 			} else {
-				val sink = data.asSink().buffered()
+				val sink = killableData.asSink().buffered()
 				runBlocking {
 					mega.downloadFile(
 						node,
@@ -542,8 +585,9 @@ class MegaCloudContentRepository(
 			} catch (ignored: Exception) {}
 			progressAware.onProgress(Progress.completed(DownloadState.download(file)))
 		} catch (e: Exception) {
+			cancellationToken.cancel()
 			tempCacheFile?.delete()
-			if (cancellationToken.isCancellationRequested()) {
+			if (cancellationToken.isCancellationRequested() || (e is java.io.IOException && (e.message?.contains("pipe", ignoreCase = true) == true || e.message?.contains("closed", ignoreCase = true) == true))) {
 				throw CancellationException(e)
 			}
 			throw e

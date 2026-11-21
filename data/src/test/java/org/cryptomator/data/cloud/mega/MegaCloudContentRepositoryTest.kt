@@ -515,4 +515,44 @@ class MegaCloudContentRepositoryTest {
 		}
 		assertTrue(ex.message?.contains("resets in ~4–6 hours") == true)
 	}
+
+	@Test
+	fun testReadCancellationWhenPipeClosedThrowsCancellationException() = runBlocking {
+		val cancelNode = Node().apply {
+			hash = "cancel_node_hash"
+			name = "stream.mp4"
+			nodeType = NodeType.FILE
+			size = 5000L
+			timestamp = Instant.fromEpochMilliseconds(1700000000000L)
+		}
+		whenever(mega.getNodeByHash("cancel_node_hash")).thenReturn(cancelNode)
+		whenever(mega.downloadFile(eq(cancelNode), any(), any(), any())).thenAnswer { invocation ->
+			val sink = invocation.getArgument<kotlinx.io.Sink>(1)
+			sink.write("initial bytes".toByteArray())
+			sink.flush()
+			null
+		}
+
+		val targetFile = MegaFile(
+			hash = "cancel_node_hash",
+			name = "stream.mp4",
+			path = "/stream.mp4",
+			parent = repository.root(cloud),
+			cloud = cloud,
+			size = 5000L
+		)
+
+		val closedOut = object : java.io.OutputStream() {
+			override fun write(b: Int) {
+				throw java.io.IOException("Pipe closed")
+			}
+			override fun write(b: ByteArray, off: Int, len: Int) {
+				throw java.io.IOException("Pipe closed")
+			}
+		}
+
+		assertThrows(org.cryptomator.domain.exception.CancellationException::class.java) {
+			repository.read(targetFile, closedOut, ProgressAware.NO_OP_PROGRESS_AWARE_DOWNLOAD)
+		}
+	}
 }
