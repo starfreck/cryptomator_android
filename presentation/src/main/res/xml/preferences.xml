@@ -175,6 +175,12 @@
 			android:summary="@string/screen_settings_background_unlock_preparation_label_summary"
 			android:title="@string/screen_settings_background_unlock_preparation_label" />
 
+		<SwitchPreference
+			android:defaultValue="true"
+			android:key="pipelinedStreaming"
+			android:summary="@string/screen_settings_pipelined_streaming_summary"
+			android:title="@string/screen_settings_pipelined_streaming_title" />
+
 	</PreferenceCategory>
 
 	<PreferenceCategory android:title="@string/screen_settings_section_social">

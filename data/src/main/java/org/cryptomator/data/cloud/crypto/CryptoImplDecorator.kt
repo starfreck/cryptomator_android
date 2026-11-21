@@ -24,19 +24,18 @@ import org.cryptomator.domain.usecases.cloud.DownloadState
 import org.cryptomator.domain.usecases.cloud.FileBasedDataSource.Companion.from
 import org.cryptomator.domain.usecases.cloud.Progress
 import org.cryptomator.domain.usecases.cloud.UploadState
+import org.cryptomator.util.SharedPreferencesHandler
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
-import java.io.PipedInputStream
-import java.io.PipedOutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.util.LinkedList
 import java.util.Queue
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Supplier
 
 
@@ -324,92 +323,73 @@ abstract class CryptoImplDecorator(
 		} else name.substring(lastDot + 1)
 	}
 
+	private val streamingFileReader by lazy { StreamingCryptoFileReader(cloudContentRepository, cryptor) }
+
+	private fun isStreamingEnabled(): Boolean {
+		return try {
+			SharedPreferencesHandler(context).pipelinedStreaming()
+		} catch (_: Exception) {
+			true
+		}
+	}
+
 	@Throws(BackendException::class)
 	fun read(cryptoFile: CryptoFile, data: OutputStream, progressAware: ProgressAware<DownloadState>) {
+		if (isStreamingEnabled()) {
+			streamingFileReader.read(cryptoFile, data, progressAware)
+		} else {
+			readLegacy(cryptoFile, data, progressAware)
+		}
+	}
+
+	@Throws(BackendException::class)
+	private fun readLegacy(cryptoFile: CryptoFile, data: OutputStream, progressAware: ProgressAware<DownloadState>) {
 		val ciphertextFile = cryptoFile.cloudFile
-		val pipeBufferSize = 1024 * 1024 // 1 MB piped memory buffer
-		val pipedOut = PipedOutputStream()
-		val pipedIn = PipedInputStream(pipedOut, pipeBufferSize)
-		val downloadError = AtomicReference<Throwable?>(null)
-
-		val downloadThread = Thread({
-			try {
-				pipedOut.use { out ->
-					cloudContentRepository.read(
-						ciphertextFile,
-						out,
-						DownloadFileReplacingProgressAware(cryptoFile, progressAware)
-					)
-				}
-			} catch (t: Throwable) {
-				downloadError.set(t)
-			} finally {
-				try {
-					pipedOut.close()
-				} catch (_: IOException) {
-				}
-			}
-		}, "CryptoDownloadProducer-${cryptoFile.name}")
-
 		try {
-			downloadThread.start()
-			progressAware.onProgress(Progress.started(DownloadState.decryption(cryptoFile)))
-			Channels.newChannel(pipedIn).use { readableByteChannel ->
-				DecryptingReadableByteChannel(readableByteChannel, cryptor(), true).use { decryptingReadableByteChannel ->
-					val buff = ByteBuffer.allocate(cryptor().fileContentCryptor().ciphertextChunkSize())
-					val cleartextSize = cryptoFile.size ?: Long.MAX_VALUE
-					var decrypted: Long = 0
-					var read: Int
-					while (decryptingReadableByteChannel.read(buff).also { read = it } > 0) {
-						buff.flip()
-						data.write(buff.array(), 0, buff.remaining())
-						decrypted += read.toLong()
-						progressAware.onProgress(
-							Progress.progress(DownloadState.decryption(cryptoFile))
-								.between(0)
-								.and(cleartextSize)
-								.withValue(decrypted)
-						)
+			val encryptedTmpFile = readToTmpFile(cryptoFile, ciphertextFile, progressAware)
+			try {
+				progressAware.onProgress(Progress.started(DownloadState.decryption(cryptoFile)))
+				Channels.newChannel(FileInputStream(encryptedTmpFile)).use { readableByteChannel ->
+					DecryptingReadableByteChannel(readableByteChannel, cryptor(), true).use { decryptingReadableByteChannel ->
+						val buff = ByteBuffer.allocate(cryptor().fileContentCryptor().ciphertextChunkSize())
+						val cleartextSize = cryptoFile.size ?: Long.MAX_VALUE
+						var decrypted: Long = 0
+						var read: Int
+						while (decryptingReadableByteChannel.read(buff).also { read = it } > 0) {
+							buff.flip()
+							data.write(buff.array(), 0, buff.remaining())
+							decrypted += read.toLong()
+							progressAware
+								.onProgress(
+									Progress.progress(DownloadState.decryption(cryptoFile)) //
+										.between(0) //
+										.and(cleartextSize) //
+										.withValue(decrypted)
+								)
+						}
 					}
 				}
+			} finally {
+				encryptedTmpFile.delete()
+				progressAware.onProgress(Progress.completed(DownloadState.decryption(cryptoFile)))
 			}
-		} catch (e: Throwable) {
-			try {
-				pipedIn.close()
-			} catch (_: IOException) {
-			}
-			downloadThread.interrupt()
-			try {
-				downloadThread.join(2000)
-			} catch (_: InterruptedException) {
-				Thread.currentThread().interrupt()
-			}
-			val err = downloadError.get()
-			if (err is BackendException) throw err
-			if (err is IOException) throw FatalBackendException(err)
-			if (err != null) throw FatalBackendException(err)
-			if (e is BackendException) throw e
-			if (e is IOException) throw FatalBackendException(e)
+		} catch (e: IOException) {
 			throw FatalBackendException(e)
-		} finally {
-			try {
-				pipedIn.close()
-			} catch (_: IOException) {
-			}
-			try {
-				downloadThread.join()
-			} catch (_: InterruptedException) {
-				Thread.currentThread().interrupt()
-			}
-			progressAware.onProgress(Progress.completed(DownloadState.decryption(cryptoFile)))
 		}
+	}
 
-		val err = downloadError.get()
-		if (err != null) {
-			if (err is BackendException) throw err
-			if (err is IOException) throw FatalBackendException(err)
-			throw FatalBackendException(err)
+	@Throws(BackendException::class, IOException::class)
+	private fun readToTmpFile(cryptoFile: CryptoFile, file: CloudFile, progressAware: ProgressAware<DownloadState>): File {
+		val encryptedTmpFile = File.createTempFile(UUID.randomUUID().toString(), ".crypto", internalCache)
+		try {
+			FileOutputStream(encryptedTmpFile).use { encryptedData ->
+				cloudContentRepository.read(file, encryptedData, DownloadFileReplacingProgressAware(cryptoFile, progressAware))
+			}
+		} catch (e: Exception) {
+			encryptedTmpFile.delete()
+			throw e
 		}
+		return encryptedTmpFile
 	}
 
 	@Throws(BackendException::class)

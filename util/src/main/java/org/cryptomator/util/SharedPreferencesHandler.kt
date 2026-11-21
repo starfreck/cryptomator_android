@@ -239,6 +239,10 @@ constructor(context: Context) : SharedPreferences.OnSharedPreferenceChangeListen
 		return defaultSharedPreferences.getValue(PURCHASE_REVOKED_PENDING, false)
 	}
 
+	fun pipelinedStreaming(): Boolean {
+		return defaultSharedPreferences.getValue(PIPELINED_STREAMING, true)
+	}
+
 	fun purchaseRevokedReason(): String {
 		return defaultSharedPreferences.getValue(PURCHASE_REVOKED_REASON, "")
 	}
@@ -432,6 +436,7 @@ constructor(context: Context) : SharedPreferences.OnSharedPreferenceChangeListen
 		const val CRYPTOMATOR_VARIANTS = "cryptomatorVariants"
 		const val LICENSES_ACTIVITY = "licensesActivity"
 		const val TRUSTED_HUB_HOSTS = "trustedHubHosts"
+		const val PIPELINED_STREAMING = "pipelinedStreaming"
 	}
 
 	private inline fun SharedPreferences.edit(operation: (SharedPreferences.Editor) -> Unit) {
