@@ -59,15 +59,34 @@ class MegaCloudContentRepository(
 			null
 		}
 
+	private fun shouldCache(dir: File, fileSize: Long): Boolean {
+		if (fileSize <= 0L || fileSize > MAX_SINGLE_FILE_CACHE_BYTES) return false
+		val usable = dir.usableSpace
+		if (usable > 0L) {
+			if (usable < STORAGE_SAFETY_FLOOR_BYTES) return false
+			if (usable - fileSize < STORAGE_SAFETY_FLOOR_BYTES) return false
+		}
+		return true
+	}
+
 	private fun pruneCacheIfNecessary() {
 		val dir = cacheDir ?: return
 		val files = dir.listFiles { _, name -> !name.endsWith(".tmp") } ?: return
 		val totalSize = files.sumOf { it.length() }
-		if (totalSize > MAX_TOTAL_CACHE_SIZE) {
+		val usable = dir.usableSpace
+		val dynamicLimit = if (usable > 0L) {
+			val tenPercent = (usable * FREE_SPACE_CACHE_PERCENTAGE).toLong()
+			tenPercent.coerceAtLeast(MIN_DYNAMIC_CACHE_BYTES)
+		} else {
+			MIN_DYNAMIC_CACHE_BYTES
+		}
+
+		if (totalSize > dynamicLimit || (usable > 0L && usable < STORAGE_SAFETY_FLOOR_BYTES)) {
 			val sorted = files.sortedBy { it.lastModified() }
 			var currentSize = totalSize
+			val targetSize = (dynamicLimit * 0.7).toLong()
 			for (f in sorted) {
-				if (currentSize <= MAX_TOTAL_CACHE_SIZE * 0.7) break
+				if (currentSize <= targetSize && (dir.usableSpace >= STORAGE_SAFETY_FLOOR_BYTES)) break
 				currentSize -= f.length()
 				f.delete()
 			}
@@ -404,7 +423,7 @@ class MegaCloudContentRepository(
 
 		val fileSize = file.size ?: node.size
 		val dir = cacheDir
-		val cachedFile = if (dir != null && node.hash.isNotEmpty() && fileSize in 1..MAX_CACHE_FILE_SIZE) {
+		val cachedFile = if (dir != null && node.hash.isNotEmpty() && fileSize > 0L) {
 			File(dir, "${node.hash}_$fileSize")
 		} else null
 
@@ -439,7 +458,7 @@ class MegaCloudContentRepository(
 		val cancellationToken = CancellationToken()
 		progressAware.onProgress(Progress.started(DownloadState.download(file)))
 
-		val tempCacheFile = if (cachedFile != null && dir != null) {
+		val tempCacheFile = if (cachedFile != null && dir != null && shouldCache(dir, fileSize)) {
 			File(dir, "${node.hash}_${fileSize}.tmp")
 		} else null
 
@@ -655,7 +674,9 @@ class MegaCloudContentRepository(
 	}
 
 	companion object {
-		private const val MAX_CACHE_FILE_SIZE = 50L * 1024 * 1024 // 50 MB
-		private const val MAX_TOTAL_CACHE_SIZE = 150L * 1024 * 1024 // 150 MB
+		private const val MAX_SINGLE_FILE_CACHE_BYTES = 2L * 1024 * 1024 * 1024 // 2 GB
+		private const val STORAGE_SAFETY_FLOOR_BYTES = 2L * 1024 * 1024 * 1024 // 2 GB minimum free disk space
+		private const val FREE_SPACE_CACHE_PERCENTAGE = 0.10 // Up to 10% of free storage
+		private const val MIN_DYNAMIC_CACHE_BYTES = 150L * 1024 * 1024 // At least 150 MB if above safety floor
 	}
 }

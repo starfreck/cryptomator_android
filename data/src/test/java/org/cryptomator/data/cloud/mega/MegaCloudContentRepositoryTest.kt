@@ -451,6 +451,48 @@ class MegaCloudContentRepositoryTest {
 	}
 
 	@Test
+	fun testReadDoesNotCacheFileExceedingMaxLimit() = runBlocking {
+		val tempCacheDir = File(System.getProperty("java.io.tmpdir"), "mega_test_cache_large_${System.currentTimeMillis()}").apply { mkdirs() }
+		try {
+			whenever(context.cacheDir).thenReturn(tempCacheDir)
+
+			val hugeNode = Node().apply {
+				hash = "huge_file_hash"
+				name = "video.mkv"
+				nodeType = NodeType.FILE
+				size = 3L * 1024 * 1024 * 1024 // 3 GB > 2 GB limit
+				timestamp = Instant.fromEpochMilliseconds(1700000000000L)
+			}
+			whenever(mega.getNodeByHash("huge_file_hash")).thenReturn(hugeNode)
+			whenever(mega.downloadFile(eq(hugeNode), any(), any(), any())).thenAnswer { invocation ->
+				val sink = invocation.getArgument<kotlinx.io.Sink>(1)
+				sink.write("chunk".toByteArray())
+				sink.flush()
+				null
+			}
+
+			val targetFile = MegaFile(
+				hash = "huge_file_hash",
+				name = "video.mkv",
+				path = "/video.mkv",
+				parent = repository.root(cloud),
+				cloud = cloud,
+				size = 3L * 1024 * 1024 * 1024
+			)
+
+			val out = ByteArrayOutputStream()
+			repository.read(targetFile, out, ProgressAware.NO_OP_PROGRESS_AWARE_DOWNLOAD)
+			assertEquals("chunk", out.toString())
+
+			val cacheFolder = File(tempCacheDir, "mega_cache")
+			val cachedFiles = cacheFolder.listFiles() ?: emptyArray()
+			assertTrue(cachedFiles.isEmpty())
+		} finally {
+			tempCacheDir.deleteRecursively()
+		}
+	}
+
+	@Test
 	fun testMegaExceptionOverQuotaWithWaitTime() {
 		val root = repository.root(cloud)
 		whenever(mega.getNodeByHash("root_hash")).thenAnswer {
