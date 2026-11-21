@@ -16,6 +16,7 @@ import org.cryptomator.domain.exception.NoSuchCloudFileException
 import org.cryptomator.domain.repository.CloudContentRepository
 import org.cryptomator.domain.usecases.ProgressAware
 import org.cryptomator.domain.usecases.cloud.DownloadState
+import org.cryptomator.domain.usecases.cloud.Progress
 import org.cryptomator.domain.usecases.cloud.UploadState
 import org.cryptomator.util.named
 import java.io.File
@@ -123,6 +124,15 @@ class DocumentContentCache @JvmOverloads constructor(
 	 * editor never saw.
 	 */
 	private val pinnedWrites = HashSet<String>()
+	private val activeStreaming = HashMap<VaultPath, StreamingState>()
+
+	private class StreamingState(
+		val file: File,
+		val lock: java.lang.Object = java.lang.Object(),
+		@Volatile var isCompleted: Boolean = false,
+		@Volatile var error: Throwable? = null,
+		val references: AtomicInteger = AtomicInteger(1)
+	)
 
 	init {
 		directory.mkdirs()
@@ -135,6 +145,81 @@ class DocumentContentCache @JvmOverloads constructor(
 
 	fun file(path: VaultPath, signal: CancellationSignal? = null, progressAware: ProgressAware<DownloadState> = ProgressAware.NO_OP_PROGRESS_AWARE_DOWNLOAD): File {
 		return copy(path, signal, progressAware).file
+	}
+
+	fun startStreaming(path: VaultPath): StreamingHandle {
+		val metadata = requireFile(metadataCache.requireCurrentDocument(path), path)
+		val outdated = localCopy(path)
+
+		val state = synchronized(activeStreaming) {
+			activeStreaming[path]?.also {
+				it.references.incrementAndGet()
+				claim(it.file)
+			} ?: run {
+				val downloadedFile = claim(File(directory, UUID.randomUUID().toString()))
+				val lock = java.lang.Object()
+				val state = StreamingState(downloadedFile, lock)
+				activeStreaming[path] = state
+
+				val inCloud = metadataCache.readFromCloud(path)
+				awaitedDownloads.incrementAndGet()
+				val progressAware = object : ProgressAware<DownloadState> {
+					override fun onProgress(progress: Progress<DownloadState>) {
+						synchronized(lock) {
+							lock.notifyAll()
+						}
+					}
+				}
+				val transfer = scheduler.download(path) {
+					read(path, inCloud(), downloadedFile, progressAware)
+				}
+				transfer.whenComplete { downloadedTime, throwable ->
+					try {
+						if (throwable != null) {
+							state.error = throwable
+							LOG.e(throwable, "Streaming download failed for %s", path.path)
+						} else {
+							state.isCompleted = true
+							val downloaded = downloadedTime ?: metadata.lastModified
+							withCopiesLocked {
+								val current = currentPath(path, metadata)
+								if (current != null && localCopy(current) == outdated && !metadataCache.isUploading(current)) {
+									storeOrDrop(current, downloadedFile, downloaded)
+									outdated?.let(::deleteUnlessInUse)
+								}
+							}
+						}
+					} finally {
+						synchronized(lock) {
+							lock.notifyAll()
+						}
+						if (awaitedDownloads.decrementAndGet() == 0) {
+							onAwaitedDownloadsDone?.invoke()
+						}
+					}
+				}
+				state
+			}
+		}
+
+		return StreamingHandle(
+			file = state.file,
+			expectedSize = metadata.size ?: 0L,
+			lock = state.lock,
+			isCompletedProvider = { state.isCompleted },
+			errorProvider = { state.error },
+			release = {
+				val refs = state.references.decrementAndGet()
+				if (refs <= 0) {
+					synchronized(activeStreaming) {
+						if (activeStreaming[path] === state) {
+							activeStreaming.remove(path)
+						}
+					}
+				}
+				release(state.file)
+			}
+		)
 	}
 
 	/**
@@ -1120,3 +1205,12 @@ private fun watchCloseWrite(file: File, onClosed: () -> Unit): AutoCloseable {
 	observer.startWatching()
 	return AutoCloseable { observer.stopWatching() }
 }
+
+data class StreamingHandle(
+	val file: File,
+	val expectedSize: Long,
+	val lock: java.lang.Object,
+	val isCompletedProvider: () -> Boolean,
+	val errorProvider: () -> Throwable?,
+	val release: () -> Unit
+)

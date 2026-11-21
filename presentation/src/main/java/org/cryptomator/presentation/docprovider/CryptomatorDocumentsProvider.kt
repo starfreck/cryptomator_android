@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.storage.StorageManager
 import android.provider.DocumentsContract.*
 import android.provider.DocumentsProvider
 import androidx.room.InvalidationTracker
@@ -388,7 +389,41 @@ class CryptomatorDocumentsProvider : DocumentsProvider() {
 		}
 		try {
 			if (!writing) {
-				val localFile = pinnedFile ?: whileUnlocked(path.vault, ::authenticationRequired) { contentCache.file(path, signal) }
+				if (pinnedFile != null) {
+					return ParcelFileDescriptor.open(pinnedFile, ParcelFileDescriptor.MODE_READ_ONLY, closeHandler) { e ->
+						if (e !is ParcelFileDescriptor.FileDescriptorDetachedException) {
+							contentCache.release(pinnedFile)
+						}
+					}
+				}
+
+				val metadata = metadataCache.cachedDocument(path) ?: try {
+					metadataCache.requireKnownDocument(path)
+				} catch (_: Exception) {
+					null
+				}
+
+				val cachedCopy = if (metadata != null) contentCache.currentCopy(path, metadata) else null
+				if (cachedCopy != null) {
+					LOG.i("DocumentsProvider.openDocument cache HIT in %s ms for %s, size=%s", System.currentTimeMillis() - t0, path.path, cachedCopy.length())
+					return ParcelFileDescriptor.open(cachedCopy, ParcelFileDescriptor.MODE_READ_ONLY, closeHandler) { e ->
+						if (e !is ParcelFileDescriptor.FileDescriptorDetachedException) {
+							contentCache.release(cachedCopy)
+						}
+					}
+				}
+
+				if (preferences.pipelinedStreaming() && metadata != null && isMedia(metadata)) {
+					try {
+						val pfd = openStreamingProxy(path, metadata)
+						LOG.i("DocumentsProvider.openDocument STREAMING PROXY returned in %s ms for %s, size=%s", System.currentTimeMillis() - t0, path.path, metadata.size)
+						return pfd
+					} catch (e: Exception) {
+						LOG.w(e, "Failed to open streaming proxy for %s, falling back to sync download", path.path)
+					}
+				}
+
+				val localFile = whileUnlocked(path.vault, ::authenticationRequired) { contentCache.file(path, signal) }
 				try {
 					LOG.i("DocumentsProvider.openDocument DONE in %s ms for %s, size=%s", System.currentTimeMillis() - t0, path.path, localFile.length())
 					// kept in use until the reader closes the file, so that a writer gets a copy of its own meanwhile, see
@@ -418,6 +453,51 @@ class CryptomatorDocumentsProvider : DocumentsProvider() {
 			}
 			throw FileNotFoundException("Opening $documentId failed").apply { initCause(e) }
 		}
+	}
+
+	private fun isMedia(metadata: DocumentMetadataEntity): Boolean {
+		val mime = metadata.mimeType.lowercase()
+		val name = metadata.name.lowercase()
+		return mime.startsWith("video/") ||
+				mime.startsWith("audio/") ||
+				name.endsWith(".mp4") ||
+				name.endsWith(".mkv") ||
+				name.endsWith(".mov") ||
+				name.endsWith(".avi") ||
+				name.endsWith(".webm") ||
+				name.endsWith(".mp3") ||
+				name.endsWith(".m4a") ||
+				name.endsWith(".flac") ||
+				name.endsWith(".wav") ||
+				((metadata.size ?: 0L) > 5 * 1024 * 1024L)
+	}
+
+	private fun openStreamingProxy(path: VaultPath, metadata: DocumentMetadataEntity): ParcelFileDescriptor {
+		val storageManager = context?.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+			?: throw IllegalStateException("StorageManager not available")
+		val streamingHandle = whileUnlocked(path.vault, ::authenticationRequired) {
+			contentCache.startStreaming(path)
+		}
+		val thread = HandlerThread("ProxyFd-${metadata.name}").apply { start() }
+		val handler = Handler(thread.looper)
+
+		val callback = StreamingMediaProxyCallback(
+			file = streamingHandle.file,
+			expectedSize = streamingHandle.expectedSize,
+			lock = streamingHandle.lock,
+			isCompleted = streamingHandle.isCompletedProvider,
+			errorProvider = streamingHandle.errorProvider,
+			onHeartbeat = { vaultsUsed() },
+			onReleased = {
+				try {
+					streamingHandle.release()
+				} finally {
+					thread.quitSafely()
+				}
+			}
+		)
+
+		return storageManager.openProxyFileDescriptor(ParcelFileDescriptor.MODE_READ_ONLY, callback, handler)
 	}
 
 	/**

@@ -79,6 +79,7 @@ class StreamingCryptoFileReader(
 						buff.flip()
 						data.write(buff.array(), 0, buff.remaining())
 						decrypted += read.toLong()
+						buff.clear()
 						val now = System.currentTimeMillis()
 						if (now - lastLog >= 1000) {
 							val elapsed = now - t0

@@ -431,36 +431,46 @@ class MegaCloudContentRepository(
 		} else null
 
 		if (cachedFile != null && cachedFile.exists() && cachedFile.length() == fileSize) {
-			Timber.tag("CryptomatorStream").i("MegaCloudContentRepository.read HIT local cache: %s", cachedFile.name)
-			progressAware.onProgress(Progress.started(DownloadState.download(file)))
-			cachedFile.inputStream().buffered().use { input ->
-				val buffer = ByteArray(8192)
-				var bytesRead: Int
-				var transferred = 0L
-				while (input.read(buffer).also { bytesRead = it } != -1) {
-					if (Thread.currentThread().isInterrupted) {
-						throw CancellationException()
+			if (fileSize > MAX_SINGLE_FILE_CACHE_BYTES) {
+				cachedFile.delete()
+			} else {
+				Timber.tag("CryptomatorStream").i("MegaCloudContentRepository.read HIT local cache: %s", cachedFile.name)
+				progressAware.onProgress(Progress.started(DownloadState.download(file)))
+				try {
+					cachedFile.inputStream().buffered().use { input ->
+						val buffer = ByteArray(8192)
+						var bytesRead: Int
+						var transferred = 0L
+						while (input.read(buffer).also { bytesRead = it } != -1) {
+							if (Thread.currentThread().isInterrupted) {
+								throw CancellationException()
+							}
+							try {
+								data.write(buffer, 0, bytesRead)
+							} catch (e: Exception) {
+								throw CancellationException(e)
+							}
+							transferred += bytesRead
+							progressAware.onProgress(
+								Progress.progress(DownloadState.download(file))
+									.between(0L)
+									.and(fileSize)
+									.withValue(transferred)
+							)
+						}
 					}
 					try {
-						data.write(buffer, 0, bytesRead)
-					} catch (e: Exception) {
-						throw CancellationException(e)
-					}
-					transferred += bytesRead
-					progressAware.onProgress(
-						Progress.progress(DownloadState.download(file))
-							.between(0L)
-							.and(fileSize)
-							.withValue(transferred)
-					)
+						data.flush()
+					} catch (ignored: Exception) {}
+					cachedFile.setLastModified(System.currentTimeMillis())
+					progressAware.onProgress(Progress.completed(DownloadState.download(file)))
+					return@handleExceptions
+				} catch (e: Exception) {
+					Timber.tag("CryptomatorStream").w(e, "Error reading cached file %s, deleting cache entry", cachedFile.name)
+					cachedFile.delete()
+					throw e
 				}
 			}
-			try {
-				data.flush()
-			} catch (ignored: Exception) {}
-			cachedFile.setLastModified(System.currentTimeMillis())
-			progressAware.onProgress(Progress.completed(DownloadState.download(file)))
-			return@handleExceptions
 		}
 
 		Timber.tag("CryptomatorStream").i("MegaCloudContentRepository.read downloading from MEGA network: %s", node.name)
