@@ -5,7 +5,7 @@ This guide provides instructions and architectural context for AI agents maintai
 ## 1. Fork Overview & Goals
 
 - **Upstream Repository**: `https://github.com/cryptomator/android.git` (`upstream`)
-- **Fork Repository**: `https://github.com/starfreck/cryptomator_android.git` (`origin`)
+- **Fork Repository**: `https://github.com/starfreck/cryptomator_android_mega_io.git` (`origin`)
 - **Primary Goal**: Provide native MEGA (`mega.nz`) cloud storage support in Cryptomator Android with minimal maintenance overhead when rebasing against upstream updates.
 
 ---
