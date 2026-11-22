@@ -157,6 +157,7 @@ class DocumentContentCache @JvmOverloads constructor(
 				claim(it.file)
 			} ?: run {
 				val downloadedFile = claim(File(directory, UUID.randomUUID().toString()))
+				claim(downloadedFile)
 				val lock = java.lang.Object()
 				val state = StreamingState(downloadedFile, lock)
 				activeStreaming[path] = state
@@ -178,6 +179,11 @@ class DocumentContentCache @JvmOverloads constructor(
 						if (throwable != null) {
 							state.error = throwable
 							LOG.e(throwable, "Streaming download failed for %s", path.path)
+							synchronized(activeStreaming) {
+								if (activeStreaming[path] === state) {
+									activeStreaming.remove(path)
+								}
+							}
 						} else {
 							state.isCompleted = true
 							val downloaded = downloadedTime ?: metadata.lastModified
@@ -188,8 +194,16 @@ class DocumentContentCache @JvmOverloads constructor(
 									outdated?.let(::deleteUnlessInUse)
 								}
 							}
+							synchronized(activeStreaming) {
+								if (state.references.get() <= 0) {
+									if (activeStreaming[path] === state) {
+										activeStreaming.remove(path)
+									}
+								}
+							}
 						}
 					} finally {
+						release(downloadedFile)
 						synchronized(lock) {
 							lock.notifyAll()
 						}
@@ -212,8 +226,10 @@ class DocumentContentCache @JvmOverloads constructor(
 				val refs = state.references.decrementAndGet()
 				if (refs <= 0) {
 					synchronized(activeStreaming) {
-						if (activeStreaming[path] === state) {
-							activeStreaming.remove(path)
+						if (state.isCompleted || state.error != null) {
+							if (activeStreaming[path] === state) {
+								activeStreaming.remove(path)
+							}
 						}
 					}
 				}
@@ -340,7 +356,7 @@ class DocumentContentCache @JvmOverloads constructor(
 	 * Whether uploads or downloads someone waits for are running. Previews aren't counted, see [downloadUnrecorded].
 	 */
 	fun hasTransfers(): Boolean {
-		return hasAwaitedDownloads() || metadataCache.hasUploads()
+		return hasAwaitedDownloads() || metadataCache.hasUploads() || synchronized(activeStreaming) { activeStreaming.isNotEmpty() }
 	}
 
 	/**

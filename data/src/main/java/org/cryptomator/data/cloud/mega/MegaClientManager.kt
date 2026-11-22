@@ -1,6 +1,7 @@
 package org.cryptomator.data.cloud.mega
 
 import dev.carlsen.mega.Mega
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.runBlocking
 import org.cryptomator.domain.MegaCloud
 import java.util.concurrent.ConcurrentHashMap
@@ -17,7 +18,12 @@ object MegaClientManager {
 
 		return synchronized(this) {
 			clients[key]?.let { return it }
-			val client = Mega(retries = 2)
+			val client = Mega(
+				retries = 5,
+				requestTimeout = 60.seconds,
+				connectionTimeout = 30.seconds,
+				maxConcurrentChunks = 1
+			)
 			val token = cloud.accessToken()
 			if (!token.isNullOrEmpty()) {
 				runBlocking {

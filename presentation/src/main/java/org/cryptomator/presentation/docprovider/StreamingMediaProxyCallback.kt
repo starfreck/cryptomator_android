@@ -35,13 +35,12 @@ class StreamingMediaProxyCallback(
 			onHeartbeat()
 		}
 
-		val targetOffset = minOf(offset + size, expectedSize)
 		val startTime = System.currentTimeMillis()
 		// FUSE kernel driver has a strict ~5s timeout. Wait at most 3.5s per read.
 		val timeoutMs = 3500L
 
 		synchronized(lock) {
-			while (file.length() < targetOffset && !isCompleted() && errorProvider() == null) {
+			while (file.length() <= offset && !isCompleted() && errorProvider() == null) {
 				val elapsed = System.currentTimeMillis() - startTime
 				if (elapsed >= timeoutMs) {
 					Timber.tag("CryptomatorStream").w(
@@ -60,7 +59,7 @@ class StreamingMediaProxyCallback(
 		}
 
 		val err = errorProvider()
-		if (err != null && file.length() < targetOffset) {
+		if (err != null && file.length() <= offset) {
 			Timber.tag("CryptomatorStream").e(err, "ProxyCallback.onRead error at offset %s: %s", offset, err.message)
 			throw ErrnoException("download failed", OsConstants.EIO)
 		}

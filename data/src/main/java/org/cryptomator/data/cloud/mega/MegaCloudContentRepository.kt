@@ -36,6 +36,7 @@ import java.util.Collections
 import java.util.Date
 import java.util.LinkedHashMap
 import java.util.Locale
+import java.util.UUID
 import javax.net.ssl.SSLException
 
 class MegaCloudContentRepository(
@@ -487,7 +488,7 @@ class MegaCloudContentRepository(
 		progressAware.onProgress(Progress.started(DownloadState.download(file)))
 
 		val tempCacheFile = if (cachedFile != null && dir != null && shouldCache(dir, fileSize)) {
-			File(dir, "${node.hash}_${fileSize}.tmp")
+			File(dir, "${node.hash}_${fileSize}_${UUID.randomUUID()}.tmp")
 		} else null
 
 		val killableData = object : OutputStream() {
@@ -559,6 +560,9 @@ class MegaCloudContentRepository(
 							if (Thread.currentThread().isInterrupted) {
 								cancellationToken.cancel()
 							}
+							try {
+								sink.flush()
+							} catch (ignored: Exception) {}
 							progressAware.onProgress(
 								Progress.progress(DownloadState.download(file))
 									.between(0L)
@@ -594,6 +598,9 @@ class MegaCloudContentRepository(
 							if (Thread.currentThread().isInterrupted) {
 								cancellationToken.cancel()
 							}
+							try {
+								sink.flush()
+							} catch (ignored: Exception) {}
 							progressAware.onProgress(
 								Progress.progress(DownloadState.download(file))
 									.between(0L)
