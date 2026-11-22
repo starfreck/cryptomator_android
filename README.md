@@ -7,6 +7,16 @@
 
 Cryptomator offers multi-platform transparent client-side encryption of your files in the cloud.
 
+## Fork Features & Improvements
+
+This fork includes:
+- **Native MEGA Cloud Support (`mega.nz`)**: Full cloud storage integration with 2FA and sequential chunking integrity.
+- **On-The-Fly Media Streaming**: Real-time pipelined decryption for instant video playback via SAF DocumentsProvider.
+- **Auto-Evict Decrypted Cache**: Automatically cleans decrypted file copies on vault lock.
+- **Always-Fresh Multi-Device Sync**: Automatic cloud refresh on resume and 5-second metadata TTL.
+
+See [FEATURES.md](FEATURES.md) for full architecture and technical documentation.
+
 Cryptomator for Android is currently available in the following  distribution channels:
 
 1. [Using Google Play](https://play.google.com/store/apps/details?id=org.cryptomator)
