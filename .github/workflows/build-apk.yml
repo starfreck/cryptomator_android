@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build cryptomator_mega.apk
+    name: Build & Release cryptomator_mega.apk
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -42,3 +42,42 @@ jobs:
           name: cryptomator_mega
           path: cryptomator_mega.apk
           retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat << 'EOF' > RELEASE_NOTES.md
+          ### 🚀 Cryptomator Android with Native MEGA Support
+
+          This release brings native **MEGA (`mega.nz`)** cloud storage support to Cryptomator on Android with on-the-fly streaming decryption.
+
+          #### ✨ Highlights & Features:
+          - **Native MEGA Cloud**: Direct login with email, password, and 2FA support without third-party sync tools.
+          - **Media Streaming Pipeline**: Stream encrypted videos and music on-the-fly without waiting for 100% download.
+          - **Sequential Chunk Integrity**: Pinned sequential uploads preventing chunk scrambling on large files.
+          - **Double-Claim Refcounting**: Prevents player sniffers and DocumentProvider probes from evicting active streaming files.
+
+          #### ℹ️ Cloud Provider Compatibility in this Build:
+          | Provider | Works Out-of-the-Box? | Notes |
+          |---|:---:|---|
+          | **MEGA** | ✅ **YES** | Native integration via `kmp-mega`. Zero API keys required. |
+          | **WebDAV** (Nextcloud, ownCloud, Synology) | ✅ **YES** | Standard protocol. Zero API keys required. |
+          | **Local Storage / SAF** (Device / SD Card) | ✅ **YES** | Native Android storage. Zero API keys required. |
+          | **Google Drive, OneDrive, Dropbox, Box, pCloud** | ⚠️ **NO** | Require proprietary developer OAuth keys not bundled in open builds. |
+
+          #### 📦 Installation:
+          1. Download **`cryptomator_mega.apk`** below.
+          2. Install on your Android device (enable "Install unknown apps" if prompted).
+          3. Tap **+ > Add Cloud Connection > MEGA**, enter your credentials, and unlock your vaults!
+          EOF
+
+          if gh release view v3.1.0-mega > /dev/null 2>&1; then
+            gh release edit v3.1.0-mega --notes-file RELEASE_NOTES.md
+            gh release upload v3.1.0-mega cryptomator_mega.apk --clobber
+          else
+            gh release create v3.1.0-mega cryptomator_mega.apk \
+              --title "Cryptomator Android with MEGA Support (v3.1.0-mega)" \
+              --notes-file RELEASE_NOTES.md \
+              --prerelease
+          fi
