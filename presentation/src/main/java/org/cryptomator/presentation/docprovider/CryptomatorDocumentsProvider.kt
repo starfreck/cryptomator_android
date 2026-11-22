@@ -667,6 +667,7 @@ class CryptomatorDocumentsProvider : DocumentsProvider() {
 		@JvmStatic
 		fun evictCopies() {
 			appComponent.vaultDocumentRepository().evictCopies()
+			appComponent.vaultDocumentRepository().clearCache()
 		}
 
 		/**
