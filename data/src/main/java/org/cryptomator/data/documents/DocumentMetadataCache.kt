@@ -51,7 +51,7 @@ import timber.log.Timber
 
 private val LOG = Timber.named("DocumentMetadataCache")
 
-private val REFRESH_INTERVAL_MILLIS = TimeUnit.SECONDS.toMillis(30)
+private val REFRESH_INTERVAL_MILLIS = TimeUnit.SECONDS.toMillis(5)
 
 private const val MAX_NAME_COLLISION_RETRIES = 5
 

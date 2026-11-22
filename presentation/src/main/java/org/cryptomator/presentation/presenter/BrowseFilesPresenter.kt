@@ -207,7 +207,7 @@ class BrowseFilesPresenter @Inject constructor( //
 		// the listener keeps the list up to date while the window only lost the focus
 		if (vaultListener == null) {
 			vaultListener = vaultDocumentChanges.also(vaultDocumentRepository::addListener)
-			displayedVaultFolder()?.let { listVaultFolder(forceRefresh = false) }
+			displayedVaultFolder()?.let { listVaultFolder(forceRefresh = true) }
 		}
 	}
 
