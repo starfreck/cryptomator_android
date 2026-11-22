@@ -58,7 +58,8 @@ The MEGA integration is designed surgically using factory patterns so the blast 
 - **Data Layer**:
   - `data/build.gradle`: Dependency `dev.carlsen.mega:mega:1.0.0-beta08`.
   - `data/src/main/java/org/cryptomator/data/cloud/mega/`:
-    - `MegaClientManager.kt`: Manages `MegaApiAndroid` instances, sessions, credentials, and authentication state.
+    - `MegaClientManager.kt`: Manages `Mega` instances, sessions, credentials, and authentication state. Configured with `maxConcurrentChunks = 1` to prevent chunk scrambling in `1.0.0-beta08`.
+      > **TODO**: When `dev.carlsen.mega:mega:1.0.0-beta09+` is released to Maven Central, bump the version in `data/build.gradle` and re-enable parallel chunks in `MegaClientManager.kt`. (The fix was merged into `acarlsen/kmp-mega` main on 2026-07-16).
     - `MegaCloudContentRepository.kt`: Implements `CloudContentRepository` (file listing, streaming read/write, directory creation, deletion, moves, quota lookup).
     - `MegaCloudContentRepositoryFactory.kt`: Injected by Dagger into `CloudContentRepositoryFactories`.
     - `MegaNodes.kt`: Path-to-MegaNode resolution and cache utilities.

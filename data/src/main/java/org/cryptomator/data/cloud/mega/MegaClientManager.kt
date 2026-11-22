@@ -22,6 +22,8 @@ object MegaClientManager {
 				retries = 5,
 				requestTimeout = 60.seconds,
 				connectionTimeout = 30.seconds,
+				// Pinned to 1 to prevent chunk scrambling race condition in dev.carlsen.mega:1.0.0-beta08.
+				// TODO: Bump to dev.carlsen.mega 1.0.0-beta09+ once published to Maven Central to re-enable parallel uploads.
 				maxConcurrentChunks = 1
 			)
 			val token = cloud.accessToken()
